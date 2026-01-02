@@ -159,14 +159,7 @@ let selectedBoard = null, selectedBoardWebhook = null, viewingThreadId = null;
 
 // small helpers
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
-function timeAgo(ts){
-  const t = Date.parse(ts); if(isNaN(t)) return '';
-  const s = Math.floor((Date.now()-t)/1000);
-  if(s<60) return `${s}s`;
-  if(s<3600) return `${Math.floor(s/60)}m`;
-  if(s<86400) return `${Math.floor(s/3600)}h`;
-  return `${Math.floor(s/86400)}d`;
-}
+function timeAgo(ts){ const t = Date.parse(ts); if(isNaN(t)) return ''; const s = Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
 function initials(name){ if(!name) return 'U'; return name.trim().split(/\s+/).map(p=>p[0].toUpperCase()).slice(0,2).join(''); }
 
 /* init UI */
@@ -182,7 +175,6 @@ function init(){
   $('backBtn').addEventListener('click', ()=> $('threadViewCard').style.display='none');
   $('replyBtn').addEventListener('click', onReply);
   debugHint.textContent = 'Worker: ' + (WORKER_BASE?WORKER_BASE.replace(/^https?:\/\//,''):'(not set)');
-  // shortcut: Ctrl+Enter post
   document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); if(document.activeElement && (document.activeElement.tagName==='TEXTAREA' || document.activeElement.tagName==='INPUT')) postBtn.click(); }});
   loadThreads(false);
 }
@@ -222,7 +214,6 @@ async function onPost(){
     const r = await fetch(webhookWithWait(selectedBoardWebhook), { method: 'POST', body: fd });
     if(!r.ok) throw new Error('post failed: '+r.status);
     const json = await r.json().catch(()=>({ id:String(Date.now()), content }));
-    // optimistic local add
     const localKey = `posts_${selectedBoard}`; const posts = JSON.parse(localStorage.getItem(localKey)||'[]');
     const post = { id: json.id||String(Date.now()), content: json.content||content, ts: json.timestamp||new Date().toISOString(), attachments: json.attachments||[], parent: null, isOP: isThread, name: name||'' };
     posts.unshift(post); localStorage.setItem(localKey, JSON.stringify(posts));
@@ -283,7 +274,6 @@ async function loadThreads(force=false){
       return;
     }
     const data = await res.json();
-    // merge with local optimistic posts
     const localKey = `posts_${selectedBoard}`; const localPosts = JSON.parse(localStorage.getItem(localKey)||'[]');
     const byId = new Map(); data.forEach(m=>byId.set(m.id,m));
     localPosts.forEach(lp=>{ if(!byId.has(lp.id)) byId.set(lp.id,{ id:lp.id, content:lp.content, timestamp:lp.ts||lp.timestamp, author_name:lp.name||'You', attachments:lp.attachments||[], parent:lp.parent||null, isOP:lp.isOP||false }); });
@@ -293,7 +283,7 @@ async function loadThreads(force=false){
   }catch(e){ console.error(e); threadsEl.innerHTML='Failed to load messages (console)'; debugEl.style.display='block'; debugEl.textContent=String(e); }
 }
 
-/* Group into threads by >>id */
+/* Group into threads */
 function groupToThreads(msgs){
   const map = new Map(); msgs.forEach(m=>map.set(m.id,m));
   const threads = new Map(); msgs.forEach(m=>threads.set(m.id,{ op:m, replies:[] }));
@@ -312,22 +302,21 @@ function groupToThreads(msgs){
   return Array.from(threads.values()).sort((a,b)=> new Date(b.op.timestamp) - new Date(a.op.timestamp));
 }
 
-/* Render threads */
+/* Render threads (posts clickable to open thread) */
 function renderThreads(threads){
   threadsEl.innerHTML = '';
   if(!threads.length){ threadsEl.innerHTML = '<div class="empty">No threads found.</div>'; return; }
   threads.forEach(t=>{
     const op = t.op;
     const card = document.createElement('div'); card.className='thread-card';
-    // click opens thread view
-    card.addEventListener('click', (e)=>{
-      // if clicked a control button (share / discord link) ignore
-      if(e.target.closest('.action-btn')) return;
-      openThread(op.id);
-    });
+    card.addEventListener('click', (e)=>{ if(e.target.closest('.action-btn')) return; openThread(op.id); });
 
     const left = document.createElement('div'); left.style.width='120px';
-    if(op.attachments && op.attachments[0] && op.attachments[0].url){ const img=document.createElement('img'); img.src=op.attachments[0].url; img.className='thumb'; img.loading='lazy'; img.onclick=(ev)=>{ ev.stopPropagation(); showLightbox(op.attachments[0].url); }; left.appendChild(img); }
+    if(op.attachments && op.attachments[0] && op.attachments[0].url){
+      const img=document.createElement('img'); img.src=op.attachments[0].url; img.className='thumb'; img.loading='lazy';
+      img.onclick=(ev)=>{ ev.stopPropagation(); showLightbox(op.attachments[0].url); };
+      left.appendChild(img);
+    }
     const right = document.createElement('div'); right.style.flex='1';
     const header = document.createElement('div');
     const avatar = document.createElement('span'); avatar.className='avatar'; avatar.textContent = initials(op.author_name || (op.name||'U'));
@@ -336,25 +325,21 @@ function renderThreads(threads){
     if(op.isOP || (op.content && /\[THREAD\]/i.test(op.content))) { const b = document.createElement('span'); b.className='op-badge'; b.textContent='OP'; title.appendChild(b); }
     header.appendChild(title);
     const body = document.createElement('div'); body.style.marginTop='8px'; body.innerHTML = formatText(op.content||'');
-    // clickable quotes inside body: delegation below
-    // post actions: open in discord, share, quote
     const actions = document.createElement('div'); actions.className='post-actions';
-    const openDiscord = document.createElement('a'); openDiscord.href = discordPermalink(op.id); openDiscord.textContent='Open in Discord'; openDiscord.target='_blank'; openDiscord.className='action-btn'; openDiscord.onclick = (e)=>e.stopPropagation();
     const shareBtn = document.createElement('button'); shareBtn.className='action-btn'; shareBtn.textContent='Share'; shareBtn.onclick = (e)=>{ e.stopPropagation(); sharePost(op.id); };
     const quoteBtn = document.createElement('button'); quoteBtn.className='action-btn'; quoteBtn.textContent='Quote'; quoteBtn.onclick = (e)=>{ e.stopPropagation(); insertQuote(op.id); };
     const repliesCount = document.createElement('span'); repliesCount.className='permalink'; repliesCount.textContent = `${t.replies.length} replies`;
-    actions.appendChild(openDiscord); actions.appendChild(shareBtn); actions.appendChild(quoteBtn); actions.appendChild(repliesCount);
+    actions.appendChild(shareBtn); actions.appendChild(quoteBtn); actions.appendChild(repliesCount);
 
     right.appendChild(header); right.appendChild(body); right.appendChild(actions);
     card.appendChild(left); card.appendChild(right);
     threadsEl.appendChild(card);
 
-    // enable clicking >>id spans to jump or quote
+    // enable clicking >>id spans inside this card
     body.querySelectorAll('.quote').forEach(q=>{
       q.addEventListener('click', (ev)=>{
         ev.stopPropagation();
         const id = q.dataset.id;
-        // if thread exists locally, open it; else insert into comment box
         if(findThreadById(id)) openThread(id);
         else { insertQuote(id); flash(`Quoted >>${id} into compose box`); }
       });
@@ -362,12 +347,8 @@ function renderThreads(threads){
   });
 }
 
-/* Open thread view */
-function openThread(opId){
-  viewingThreadId = opId; $('threadViewCard').style.display='block'; renderThreadView(opId); window.scrollTo({top:0,behavior:'smooth'});
-}
-
-/* Render single thread */
+/* Thread view & rendering */
+function openThread(opId){ viewingThreadId = opId; $('threadViewCard').style.display='block'; renderThreadView(opId); window.scrollTo({top:0,behavior:'smooth'}); }
 function renderThreadView(opId){
   const wrap = $('threadView'); wrap.innerHTML='Loading…';
   const channel = BOARDS[selectedBoard].channel;
@@ -380,24 +361,17 @@ function renderThreadView(opId){
     wrap.innerHTML = '';
     const opDiv = document.createElement('div'); opDiv.className='post';
     opDiv.innerHTML = `<div style="font-weight:700">${escapeHtml(op.author_name||op.name||'unknown')}</div><div class="meta">${new Date(op.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(op.timestamp)})</span></div><div style="margin-top:8px">${formatText(op.content)}</div>`;
-    if(op.attachments && op.attachments[0] && op.attachments[0].url){ const im=document.createElement('img'); im.src=op.attachments[0].url; im.style.maxWidth='640px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); opDiv.appendChild(im);}
+    if(op.attachments && op.attachments[0] && op.attachments[0].url){ const im=document.createElement('img'); im.src=op.attachments[0].url; im.style.maxWidth='640px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); opDiv.appendChild(im); }
     wrap.appendChild(opDiv);
-    // replies
     const replies = [];
     byId.forEach(m=>{ if(m.content && m.content.includes('>>'+opId)) replies.push(m); });
-    // include local replies where parent === opId
     local.filter(p=>p.parent===opId).forEach(lp=>replies.push(lp));
     replies.sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
-    replies.forEach(r=>{
-      const d = document.createElement('div'); d.className='post reply';
-      d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||r.name||'unknown')} • ${new Date(r.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(r.timestamp)})</span></div><div style="margin-top:6px">${formatText(r.content)}</div>`;
-      if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='420px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); d.appendChild(im); }
-      wrap.appendChild(d);
-    });
+    replies.forEach(r=>{ const d = document.createElement('div'); d.className='post reply'; d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||r.name||'unknown')} • ${new Date(r.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(r.timestamp)})</span></div><div style="margin-top:6px">${formatText(r.content)}</div>`; if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='420px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); d.appendChild(im); } wrap.appendChild(d); });
   }).catch(e=>{ console.error(e); wrap.innerHTML='<div class="small">Failed to load thread</div>'; });
 }
 
-/* formatText: greentext, >>id => clickable span, linkify */
+/* formatting & helpers */
 function formatText(text){
   if(!text) return '';
   let t = escapeHtml(text);
@@ -406,65 +380,24 @@ function formatText(text){
   t = t.replace(/(https?:\/\/[^\s]+)/g, m => `<a href="${m}" target="_blank">${m}</a>`);
   return t.replace(/\n/g,'<br>');
 }
+function findThreadById(id){ return threadsEl.querySelector(`.quote[data-id="${id}"]`); }
+function discordPermalink(messageId){ const channel = BOARDS[selectedBoard].channel; return `https://discord.com/channels/${GUILD_ID}/${channel}/${messageId}`; }
 
-/* utilities: find thread by id in currently loaded DOM */
-function findThreadById(id){
-  return threadsEl.querySelectorAll('.quote').length && threadsEl.querySelector(`.quote[data-id="${id}"]`);
-}
-
-/* Discord permalink builder */
-function discordPermalink(messageId){
-  const channel = BOARDS[selectedBoard].channel; return `https://discord.com/channels/${GUILD_ID}/${channel}/${messageId}`;
-}
-
-/* share: copy link and navigator.share */
 async function sharePost(messageId){
   const url = discordPermalink(messageId);
-  try{
-    await navigator.clipboard.writeText(url);
-    showCopyToast('Link copied');
-    if(navigator.share){ try { await navigator.share({ title: 'Purple Board post', url }); } catch(e){} }
-  }catch(e){ console.error('share failed', e); showCopyToast('Copy failed'); }
+  try{ await navigator.clipboard.writeText(url); showCopyToast('Link copied'); if(navigator.share){ try{ await navigator.share({ title: 'Purple Board post', url }); }catch(e){} } }catch(e){ console.error('share failed', e); showCopyToast('Copy failed'); }
 }
-
-/* insert >>id into compose box */
-function insertQuote(id){
-  const ta = $('comment'); ta.focus(); const v = ta.value; const toIns = (v && !v.endsWith('\n')?'\n':'') + `>>${id}\n`; ta.value = v + toIns; flash(`Inserted >>${id}`); }
-
-/* flash small message in status */
+function insertQuote(id){ const ta = $('comment'); ta.focus(); const v = ta.value; const toIns = (v && !v.endsWith('\n')?'\n':'') + `>>${id}\n`; ta.value = v + toIns; flash(`Inserted >>${id}`); }
 function flash(msg){ const s = $('status'); s.textContent = msg; setTimeout(()=>{ if(s.textContent===msg) s.textContent = ''; }, 2200); }
-
-/* lightbox */
 function showLightbox(src){ $('lightboxImg').src = src; $('lightbox').style.display = 'flex'; }
 function hideLightbox(){ $('lightbox').style.display = 'none'; $('lightboxImg').src = ''; }
-
-/* copy toast */
 let toastTimer = null;
-function showCopyToast(text){
-  copyToast.textContent = text || 'Copied';
-  copyToast.style.display = 'block';
-  clearTimeout(toastTimer); toastTimer = setTimeout(()=> copyToast.style.display = 'none', 2200);
-}
-
-/* health check */
+function showCopyToast(text){ copyToast.textContent = text || 'Copied'; copyToast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(()=> copyToast.style.display = 'none', 2200); }
 function checkHealth(){ if(!WORKER_BASE){ alert('Set WORKER_BASE'); return; } fetch(WORKER_BASE.replace(/\/$/,'') + '/health').then(async r=>{ const txt = await r.text(); alert('Health: '+r.status + '\n' + txt); }).catch(e=>{ alert('Health check failed — see console'); console.error(e); }); }
-
-/* find thread by id across merged messages (helper used by quote clicks) */
-function findThreadInMerged(id){
-  const cards = threadsEl.querySelectorAll('.thread-card');
-  for(const c of cards){
-    if(c.querySelector(`.quote[data-id="${id}"]`)) return true;
-  }
-  return false;
-}
-
-/* show simple toast */
-function showResult(msg){ flash(msg); }
 
 /* initial auto-refresh */
 setInterval(()=> loadThreads(true), 20000);
-
-/* expose simple helpers for console */
+/* expose for console */
 window.loadThreads = loadThreads;
 window.openThread = openThread;
 </script>
