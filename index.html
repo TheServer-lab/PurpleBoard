@@ -10,7 +10,7 @@
   --panel:#241033;
   --accent:#a86ff9;
   --muted:#cdb6ff;
-  --text:#efe6ff;
+  --text:#efe6efff;
   --card-border: rgba(255,255,255,0.04);
   --muted-2:#b99bf0;
 }
@@ -76,11 +76,8 @@ a{color:var(--accent)}
       <div class="small" style="margin-top:8px">Choose a board, add a name (optional), write your post, attach an image (optional), and Post. Threads and replies are read from Discord via the Worker and displayed here.</div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <strong>Viewer (Discord)</strong>
-      <div class="small" style="margin-top:8px">Open the Discord server to view full message history and moderation actions.</div>
-      <iframe id="discordWidget" src="https://discord.com/widget?id=1283171828214534165&theme=dark" style="width:100%;height:240px;border-radius:8px;border:1px solid var(--card-border);margin-top:8px"></iframe>
-    </div>
+    <!-- viewer removed as requested -->
+
   </aside>
 
   <!-- RIGHT: posting and threads -->
@@ -118,7 +115,11 @@ a{color:var(--accent)}
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <strong>Threads (shared)</strong>
-        <div class="controls"><button id="refreshBtn" class="small">Refresh</button><div id="debugHint" class="small" style="margin-left:8px"></div></div>
+        <div class="controls">
+          <button id="refreshBtn" class="small">Refresh</button>
+          <button id="healthBtn" class="small">Worker health</button>
+          <div id="debugHint" class="small" style="margin-left:8px"></div>
+        </div>
       </div>
       <div id="threads" class="thread-list" style="margin-top:10px"></div>
       <div id="debug" class="debug" style="display:none"></div>
@@ -150,7 +151,7 @@ a{color:var(--accent)}
    Replace values below:
    - WORKER_BASE: your deployed Cloudflare Worker URL (example was printed earlier).
    - BOARDS: webhook (for posting) and channel id (for reading) for each board.
-   Keep BOT_TOKEN out of this file.
+   Ensure channel is the numeric channel ID (not webhook).
 ============================================= */
 const WORKER_BASE = 'https://pbordworker.dassouraasish.workers.dev'; // <-- your Worker URL
 const BOARDS = {
@@ -170,7 +171,6 @@ const BOARDS = {
 const COOLDOWN_SECONDS = 12;
 const DAILY_LIMIT = 200;
 const GUILD_ID = '1283171828214534165'; // used for deep links
-
 /* ============================================ */
 
 const $ = id => document.getElementById(id);
@@ -182,6 +182,7 @@ const postBtn = $('postBtn');
 const refreshBtn = $('refreshBtn');
 const debugEl = $('debug');
 const debugHint = $('debugHint');
+const healthBtn = $('healthBtn');
 
 let selectedBoard = null;
 let selectedBoardWebhook = null;
@@ -204,9 +205,9 @@ function init(){
   if(firstKey) selectBoard(firstKey, boardListEl.querySelector('button'));
   postBtn.addEventListener('click', onPost);
   refreshBtn.addEventListener('click', ()=> loadThreads(true));
+  healthBtn.addEventListener('click', checkHealth);
   $('backBtn').addEventListener('click', ()=> { $('threadViewCard').style.display='none'; });
   $('replyBtn').addEventListener('click', onReply);
-  // quick health hint
   debugHint.textContent = 'Worker: ' + (WORKER_BASE ? WORKER_BASE.replace(/^https?:\/\//,'') : '(not set)');
   loadThreads(false);
 }
@@ -219,7 +220,6 @@ function selectBoard(name, btn){
   selectedBoard = name;
   selectedBoardWebhook = BOARDS[name].webhook;
   selectedBoardNameEl.textContent = '/' + name + '/';
-  // clear view
   $('threadViewCard').style.display='none';
 }
 
@@ -273,7 +273,6 @@ async function onPost(){
     localStorage.setItem(dailyKey, JSON.stringify(daily));
     statusEl.textContent = 'Posted ✓';
     $('comment').value=''; $('file').value=''; $('asThread').checked=false;
-    // refresh shared view soon
     setTimeout(()=> loadThreads(true), 1200);
   }catch(e){
     console.error(e);
@@ -297,7 +296,6 @@ async function onReply(){
     const r = await fetch(url, { method: 'POST', body: fd });
     if(!r.ok) throw new Error('reply failed: ' + r.status);
     const json = await r.json().catch(()=>({ id: String(Date.now()), content }));
-    // add local
     const localKey = `posts_${selectedBoard}`;
     const posts = JSON.parse(localStorage.getItem(localKey) || '[]');
     const post = { id: json.id || String(Date.now()), content: json.content || content, ts: json.timestamp || new Date().toISOString(), attachments: json.attachments || [], parent: threadId, isOP: false };
@@ -306,7 +304,6 @@ async function onReply(){
     $('replyStatus').textContent = 'Replied ✓';
     $('replyText').value=''; $('replyFile').value='';
     renderThreadView(threadId);
-    // refresh shared view
     setTimeout(()=> loadThreads(true), 1200);
   }catch(e){
     console.error(e);
@@ -328,21 +325,48 @@ async function loadThreads(force=false){
     const res = await fetch(url);
     if(!res.ok){
       const txt = await res.text().catch(()=>'');
+      // try to interpret discord error
+      let friendly = `Server returned ${res.status}`;
+      try {
+        const parsed = JSON.parse(txt);
+        // worker wraps discord error into { error: 'discord_error', status: n, text: '...'}
+        if(parsed && parsed.error === 'discord_error' && parsed.text){
+          try {
+            const inner = JSON.parse(parsed.text);
+            if(inner && inner.message && inner.code){
+              friendly = `Discord API error: ${inner.message} (code ${inner.code})`;
+              if(inner.code === 10003 || /Unknown Channel/i.test(inner.message)){
+                friendly += ' — Unknown Channel. Check the channel ID in your BOARDS config and that the bot has access to that channel.';
+              }
+            } else {
+              friendly = `Discord API returned an error: ${JSON.stringify(inner)}`;
+            }
+          } catch(e){
+            // parsed.text wasn't JSON
+            friendly = `Discord error: ${parsed.text}`;
+          }
+        } else if(parsed && parsed.message){
+          friendly = `Discord: ${parsed.message}`;
+        } else {
+          friendly = `Server error: ${txt}`;
+        }
+      } catch(e){
+        friendly = `Server returned ${res.status} — response: ${txt}`;
+      }
       threadsEl.innerHTML = 'Failed to load messages (server returned ' + res.status + ')';
-      debugEl.style.display = 'block'; debugEl.textContent = `URL: ${url}\nStatus: ${res.status}\nResponse:\n${txt}`;
+      debugEl.style.display = 'block';
+      debugEl.textContent = `URL: ${url}\nStatus: ${res.status}\nFriendly: ${friendly}\nRaw response:\n${txt}`;
       return;
     }
     const data = await res.json();
     // data is an array newest-first
-    // combine with local posts (optimistic) to ensure local posts appear
+    // combine with local posts (optimistic)
     const localKey = `posts_${selectedBoard}`;
     const localPosts = JSON.parse(localStorage.getItem(localKey) || '[]');
-    // Remove duplicates (by id)
     const byId = new Map();
     data.forEach(m => byId.set(m.id, m));
     localPosts.forEach(lp => { if(!byId.has(lp.id)) byId.set(lp.id, { id: lp.id, content: lp.content, timestamp: lp.ts || lp.timestamp, author_name: lp.name || 'You', attachments: lp.attachments || [] }); });
-    const merged = Array.from(byId.values()).sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp)); // newest first
-    // group to threads
+    const merged = Array.from(byId.values()).sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
     const threads = groupToThreads(merged);
     renderThreads(threads);
   }catch(e){
@@ -355,28 +379,23 @@ async function loadThreads(force=false){
 
 /* ---------- Group into threads by >>id quoting ---------- */
 function groupToThreads(msgs){
-  // msgs newest-first
-  const map = new Map(); // id -> msg
+  const map = new Map();
   msgs.forEach(m => map.set(m.id, m));
-  const threads = new Map(); // opId -> { op, replies: [] }
-  // initialize with all messages as potential OP
+  const threads = new Map();
   msgs.forEach(m => threads.set(m.id, { op: m, replies: [] }));
-  // classify replies
   msgs.forEach(m => {
     if(!m.content) return;
-    const match = m.content.match(/>>(\d+)/);
+    const match = m.content.match(/>>(\d{1,20})/);
     if(match){
       const refId = match[1];
       if(map.has(refId)){
         const t = threads.get(refId) || { op: map.get(refId), replies: [] };
         t.replies.push(m);
         threads.set(refId, t);
-        // remove m from top-level if present
         if(threads.has(m.id)) threads.delete(m.id);
       }
     }
   });
-  // return array newest-first by op timestamp
   return Array.from(threads.values()).sort((a,b)=> new Date(b.op.timestamp) - new Date(a.op.timestamp));
 }
 
@@ -415,14 +434,11 @@ function openThread(opId){
 function renderThreadView(opId){
   const wrap = $('threadView');
   wrap.innerHTML = '';
-  // find message and replies from merged view (call loadThreads to ensure latest, but we render from last loaded list)
   const channel = BOARDS[selectedBoard].channel;
-  // fetch messages and then render thread specifically (ensures latest)
   fetch(`${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${channel}&limit=200`)
     .then(r=>r.json())
     .then(data=>{
       const byId = new Map(); data.forEach(m=>byId.set(m.id,m));
-      // include local posts too
       const localPosts = JSON.parse(localStorage.getItem(`posts_${selectedBoard}`) || '[]');
       localPosts.forEach(p=>{ if(!byId.has(p.id)) byId.set(p.id, { id: p.id, content: p.content, timestamp: p.ts, author_name: p.name||'You', attachments: p.attachments||[] }); });
       const op = byId.get(opId);
@@ -431,11 +447,9 @@ function renderThreadView(opId){
       opDiv.innerHTML = `<div style="font-weight:700">${escapeHtml(op.author_name)}</div><div class="meta">${new Date(op.timestamp).toLocaleString()}</div><div style="margin-top:8px">${formatText(op.content)}</div>`;
       if(op.attachments && op.attachments[0] && op.attachments[0].url){ const img=document.createElement('img'); img.src=op.attachments[0].url; img.style.maxWidth='480px'; img.style.marginTop='8px'; opDiv.appendChild(img); }
       wrap.appendChild(opDiv);
-      // replies: messages that have >>opId or parent recorded locally
       const replies = [];
       byId.forEach(m=>{
         if(m.content && m.content.includes('>>' + opId)) replies.push(m);
-        // also include local posts with parent === opId
         const local = JSON.parse(localStorage.getItem(`posts_${selectedBoard}`) || '[]');
         local.filter(p=>p.parent===opId).forEach(lp=>{ replies.push(lp); });
       });
@@ -457,26 +471,28 @@ function renderThreadView(opId){
 function formatText(text){
   if(!text) return '';
   let t = escapeHtml(text);
-  // greentext: lines starting with >
   t = t.replace(/^&gt;(.+)$/gm, (m,p1) => `<div class="greentext">&gt;${escapeHtml(p1)}</div>`);
-  // >>id quoting highlight
   t = t.replace(/&gt;&gt;(\d+)/g, (m,id) => `<span class="quote">&gt;&gt;${id}</span>`);
-  // linkify
   t = t.replace(/(https?:\/\/[^\s]+)/g, m => `<a href="${m}" target="_blank">${m}</a>`);
   return t.replace(/\n/g,'<br>');
 }
-function formatTextForPost(text){
-  // keep same formatting but avoid HTML injection
-  return formatText(text);
+
+/* ---------- Health check ---------- */
+function checkHealth(){
+  if(!WORKER_BASE){ alert('Set WORKER_BASE in the HTML'); return; }
+  fetch(WORKER_BASE.replace(/\/$/,'') + '/health').then(async r=>{
+    const txt = await r.text();
+    alert('Health: ' + r.status + '\n' + txt);
+  }).catch(e=>{
+    alert('Health check failed — see console');
+    console.error(e);
+  });
 }
 
 /* ---------- Debug helpers ---------- */
-function showDebug(msg){
-  debugEl.style.display = 'block';
-  debugEl.textContent = msg;
-}
+function showDebug(msg){ debugEl.style.display = 'block'; debugEl.textContent = msg; }
 
-/* ---------- Initial auto-refresh ---------- */
+/* ---------- Auto refresh ---------- */
 setInterval(()=>{ loadThreads(true); }, 20000);
 </script>
 </body>
