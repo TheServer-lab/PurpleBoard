@@ -5,154 +5,369 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Purple Board — Shared (Worker reader)</title>
 <style>
-:root{--bg:#120018;--panel:#241033;--accent:#a86ff9;--muted:#cdb6ff;--text:#efe6ff}
-body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto;background:linear-gradient(180deg,var(--bg),#1b0228);color:var(--text)}
-header{padding:12px;background:linear-gradient(90deg,#1b002b,#2b003f);border-bottom:1px solid rgba(255,255,255,0.04)}
-.container{max-width:980px;margin:18px auto;padding:12px}
-.card{background:linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0.005));padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);margin-bottom:12px}
+:root{
+  --bg:#120018;
+  --panel:#241033;
+  --accent:#a86ff9;
+  --muted:#cdb6ff;
+  --text:#efe6ff;
+  --card-border: rgba(255,255,255,0.04);
+  --muted-2:#b99bf0;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+  background:linear-gradient(180deg,var(--bg),#1b0228);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+}
+header{
+  padding:12px;
+  background:linear-gradient(90deg,#1b002b,#2b003f);
+  border-bottom:1px solid var(--card-border);
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+header h1{margin:0;font-size:18px;color:var(--accent)}
+.container{max-width:1100px;margin:18px auto;padding:12px;display:grid;grid-template-columns:300px 1fr;gap:14px}
+.card{background:linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0.005));padding:12px;border-radius:10px;border:1px solid var(--card-border)}
+.board-list button{display:block;width:100%;text-align:left;padding:10px;border-radius:8px;border:0;background:transparent;color:var(--muted);margin-bottom:8px;cursor:pointer}
+.board-list button.active{background:rgba(168,111,249,0.08);color:var(--text);box-shadow:0 6px 18px rgba(168,111,249,0.06)}
+input[type="text"],textarea,input[type="file"],select,button{width:100%;padding:8px;border-radius:8px;border:1px solid var(--card-border);background:transparent;color:var(--text)}
+textarea{resize:vertical}
+button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;padding:8px 10px;border-radius:8px}
 .small{font-size:13px;color:var(--muted)}
-.post{padding:8px;border-radius:8px;background:#0f0720;border:1px solid #36194f;margin-top:6px}
+.notice{font-size:13px;color:var(--muted);margin-top:8px}
 .thread-list{display:flex;flex-direction:column;gap:10px}
-.thumb{max-width:320px;margin-top:8px;border-radius:6px}
+.thread-card{display:flex;gap:12px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);align-items:flex-start;background:rgba(255,255,255,0.01)}
+.thumb{width:120px;height:auto;border-radius:6px;object-fit:cover}
+.meta{font-size:12px;color:var(--muted)}
+.greentext{color:#7cffb2}
+.quote{background:rgba(255,255,255,0.02);color:var(--muted);padding:4px;border-radius:6px;display:inline-block}
 .controls{display:flex;gap:8px;align-items:center}
+.thread-view{display:flex;flex-direction:column;gap:8px}
+.post{padding:8px;border-radius:8px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.02)}
+.reply{margin-left:18px}
+.footer-note{font-size:12px;color:var(--muted);margin-top:6px}
+.captcha{display:flex;align-items:center;gap:8px;margin-top:6px}
+.bad{color:#ff7b7b}
+.debug{font-family:monospace;font-size:12px;color:var(--muted-2);white-space:pre-wrap;margin-top:8px}
+@media (max-width:880px){ .container{grid-template-columns:1fr} .thumb{display:none} }
+a{color:var(--accent)}
 </style>
 </head>
 <body>
-<header><h1>Purple Board</h1></header>
+<header>
+  <h1>Purple Board</h1>
+  <div class="small">Shared imageboard — posts go to Discord via webhooks; reads via Cloudflare Worker</div>
+</header>
+
 <div class="container">
 
-  <div class="card">
-    <strong>Boards</strong>
-    <div id="boards" style="margin-top:8px"></div>
-  </div>
+  <!-- LEFT: Boards + help -->
+  <aside class="card">
+    <div><strong>Boards</strong></div>
+    <div class="board-list" id="boardList" style="margin-top:10px"></div>
 
-  <div class="card">
-    <strong>Post</strong>
-    <label class="small">Board</label>
-    <select id="boardSelect"></select>
-    <label class="small">Name (optional)</label>
-    <input id="name" placeholder="Name (optional)">
-    <label class="small">Text</label>
-    <textarea id="text" rows="4"></textarea>
-    <label class="small">Attach image</label>
-    <input id="file" type="file" accept="image/*">
-    <div class="controls" style="margin-top:8px">
-      <button id="postBtn">Post</button>
-      <button id="refreshBtn" class="small">Refresh</button>
-      <div id="postStatus" class="small"></div>
+    <div class="card" style="margin-top:12px">
+      <strong>Quick help</strong>
+      <div class="small" style="margin-top:8px">Choose a board, add a name (optional), write your post, attach an image (optional), and Post. Threads and replies are read from Discord via the Worker and displayed here.</div>
     </div>
-  </div>
 
-  <div class="card">
-    <strong>Threads (shared)</strong>
-    <div id="threads" class="thread-list" style="margin-top:8px">Loading…</div>
-  </div>
+    <div class="card" style="margin-top:12px">
+      <strong>Viewer (Discord)</strong>
+      <div class="small" style="margin-top:8px">Open the Discord server to view full message history and moderation actions.</div>
+      <iframe id="discordWidget" src="https://discord.com/widget?id=1283171828214534165&theme=dark" style="width:100%;height:240px;border-radius:8px;border:1px solid var(--card-border);margin-top:8px"></iframe>
+    </div>
+  </aside>
 
+  <!-- RIGHT: posting and threads -->
+  <main>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>New Post / Thread</strong></div>
+        <div class="small" id="selectedBoardName"></div>
+      </div>
+
+      <label class="small" style="margin-top:8px">Name</label>
+      <input type="text" id="name" placeholder="Name (optional)">
+
+      <label class="small" style="margin-top:8px">Comment</label>
+      <textarea id="comment" rows="4" placeholder="Say something (use >greentext or >>messageId to quote)"></textarea>
+
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <input id="file" type="file" accept="image/*" style="flex:1">
+        <label style="display:flex;align-items:center;gap:6px;margin-left:6px"><input id="asThread" type="checkbox"> OP (new thread)</label>
+      </div>
+
+      <div class="captcha">
+        <label style="display:flex;align-items:center;gap:8px"><input id="fakeCaptcha" type="checkbox"> I'm human (demo)</label>
+        <div class="small">Client-side captcha — optional</div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <button class="primary" id="postBtn">Post</button>
+        <div id="status" class="small"></div>
+      </div>
+
+      <div class="footer-note">Client-side cooldown and daily limits enforced for convenience.</div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Threads (shared)</strong>
+        <div class="controls"><button id="refreshBtn" class="small">Refresh</button><div id="debugHint" class="small" style="margin-left:8px"></div></div>
+      </div>
+      <div id="threads" class="thread-list" style="margin-top:10px"></div>
+      <div id="debug" class="debug" style="display:none"></div>
+    </div>
+
+    <div class="card" id="threadViewCard" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>Thread View</strong>
+        <div><button id="backBtn" class="small">Back</button></div>
+      </div>
+      <div id="threadView" class="thread-view"></div>
+
+      <div style="margin-top:8px" class="post">
+        <input id="replyName" placeholder="Name (optional)">
+        <textarea id="replyText" rows="3" placeholder="Reply"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="replyFile" type="file" accept="image/*">
+          <button class="primary" id="replyBtn">Reply</button>
+          <div id="replyStatus" class="small"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
 </div>
 
 <script>
-/* ---------- CONFIG (REPLACE) ---------- */
-const WORKER_BASE = 'https://pbordworker.dassouraasish.workers.dev'; // your worker URL
+/* ================== CONFIG ==================
+   Replace values below:
+   - WORKER_BASE: your deployed Cloudflare Worker URL (example was printed earlier).
+   - BOARDS: webhook (for posting) and channel id (for reading) for each board.
+   Keep BOT_TOKEN out of this file.
+============================================= */
+const WORKER_BASE = 'https://pbordworker.dassouraasish.workers.dev'; // <-- your Worker URL
 const BOARDS = {
-  art: { webhook: "https://discord.com/api/webhooks/1456573325148164128/UlQfAb8WE1hWw_uBCs01QPuLjuBg4HAjKAyifGjs0-YDqjIB75Ee1RMvBX0EmoXwE8Xi", channel: "1456573325148164128" },
-  tech: { webhook: "https://discord.com/api/webhooks/1456573404521173041/pxVoHmjnnYTjwEH1EDmf6uMvVbQD3vPogizcyt_5T16AaNUStyw3XyWEniiCvRegprAg", channel: "1456573404521173041" },
-  random: { webhook: "https://discord.com/api/webhooks/1456573475815690395/lb5_p1w6MXf852xPI67v9BPRqSicH_gvpf1C2ki2AmKyb7xL0nUHCrBhsBRrxzSrD26P", channel: "1456573475815690395" }
+  "art": {
+    webhook: "https://discord.com/api/webhooks/1456573325148164128/UlQfAb8WE1hWw_uBCs01QPuLjuBg4HAjKAyifGjs0-YDqjIB75Ee1RMvBX0EmoXwE8Xi",
+    channel: "1456573325148164128"
+  },
+  "tech": {
+    webhook: "https://discord.com/api/webhooks/1456573404521173041/pxVoHmjnnYTjwEH1EDmf6uMvVbQD3vPogizcyt_5T16AaNUStyw3XyWEniiCvRegprAg",
+    channel: "1456573404521173041"
+  },
+  "random": {
+    webhook: "https://discord.com/api/webhooks/1456573475815690395/lb5_p1w6MXf852xPI67v9BPRqSicH_gvpf1C2ki2AmKyb7xL0nUHCrBhsBRrxzSrD26P",
+    channel: "1456573475815690395"
+  }
 };
-/* -------------------------------------- */
+const COOLDOWN_SECONDS = 12;
+const DAILY_LIMIT = 200;
+const GUILD_ID = '1283171828214534165'; // used for deep links
+
+/* ============================================ */
 
 const $ = id => document.getElementById(id);
-const boardSelect = $('boardSelect');
+const boardListEl = $('boardList');
+const selectedBoardNameEl = $('selectedBoardName');
 const threadsEl = $('threads');
+const statusEl = $('status');
 const postBtn = $('postBtn');
 const refreshBtn = $('refreshBtn');
+const debugEl = $('debug');
+const debugHint = $('debugHint');
 
-function initUI(){
-  boardSelect.innerHTML = '';
-  const boardsDiv = $('boards');
-  boardsDiv.innerHTML = '';
-  for (const k in BOARDS){
-    const b = BOARDS[k];
-    const btn = document.createElement('button');
-    btn.textContent = '/'+k+'/';
-    btn.style.marginRight='8px';
-    btn.onclick = ()=> selectBoard(k);
-    boardsDiv.appendChild(btn);
-
-    const opt = document.createElement('option');
-    opt.value = k;
-    opt.textContent = '/'+k+'/';
-    boardSelect.appendChild(opt);
-  }
-  postBtn.addEventListener('click', onPost);
-  refreshBtn.addEventListener('click', loadThreads);
-  selectBoard(Object.keys(BOARDS)[0]);
-  loadThreads();
-}
-
-let currentBoardKey = null;
-function selectBoard(key){
-  currentBoardKey = key;
-  loadThreads();
-}
-
-async function onPost(){
-  $('postStatus').textContent = '';
-  if(!currentBoardKey) { $('postStatus').textContent = 'Choose a board'; return; }
-  const b = BOARDS[currentBoardKey];
-  const name = $('name').value.trim();
-  const text = $('text').value.trim();
-  const file = $('file').files[0];
-  if(!text && !file){ $('postStatus').textContent = 'Write something or attach an image'; return; }
-  const fd = new FormData();
-  fd.append('content', (name ? name + '\n' : '') + text);
-  if(file) fd.append('file', file);
-  try{
-    const url = b.webhook.includes('?') ? b.webhook + '&wait=true' : b.webhook + '?wait=true';
-    const r = await fetch(url, { method: 'POST', body: fd });
-    if(!r.ok) throw new Error('post failed: '+r.status);
-    const j = await r.json();
-    $('postStatus').textContent = 'Posted ✓';
-    $('text').value = ''; $('file').value = '';
-    // optimistic reload
-    setTimeout(loadThreads, 1200);
-  }catch(e){
-    console.error(e);
-    $('postStatus').textContent = 'Post failed (console)';
-  }
-}
+let selectedBoard = null;
+let selectedBoardWebhook = null;
+let viewingThreadId = null;
 
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 
-function formatContent(text){
-  if(!text) return '';
-  let t = escapeHtml(text);
-  // greentext
-  t = t.replace(/^&gt;(.+)$/gm, (m,p)=>`<div style="color:#7cffb2">&gt;${escapeHtml(p)}</div>`);
-  // >>id
-  t = t.replace(/&gt;&gt;(\d+)/g, '<span style="background:rgba(255,255,255,0.02);padding:4px;border-radius:4px">&gt;&gt;$1</span>');
-  // linkify
-  t = t.replace(/(https?:\/\/[^\s]+)/g, m => `<a href="${m}" target="_blank" style="color:#a86ff9">${m}</a>`);
-  return t.replace(/\n/g,'<br>');
+/* ---------- Init UI ---------- */
+function init(){
+  boardListEl.innerHTML = '';
+  for(const key in BOARDS){
+    const btn = document.createElement('button');
+    btn.textContent = '/' + key + '/';
+    btn.dataset.board = key;
+    btn.onclick = ()=> selectBoard(key, btn);
+    boardListEl.appendChild(btn);
+  }
+  // select first by default
+  const firstKey = Object.keys(BOARDS)[0];
+  if(firstKey) selectBoard(firstKey, boardListEl.querySelector('button'));
+  postBtn.addEventListener('click', onPost);
+  refreshBtn.addEventListener('click', ()=> loadThreads(true));
+  $('backBtn').addEventListener('click', ()=> { $('threadViewCard').style.display='none'; });
+  $('replyBtn').addEventListener('click', onReply);
+  // quick health hint
+  debugHint.textContent = 'Worker: ' + (WORKER_BASE ? WORKER_BASE.replace(/^https?:\/\//,'') : '(not set)');
+  loadThreads(false);
+}
+init();
+
+/* ---------- Board selection ---------- */
+function selectBoard(name, btn){
+  boardListEl.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  selectedBoard = name;
+  selectedBoardWebhook = BOARDS[name].webhook;
+  selectedBoardNameEl.textContent = '/' + name + '/';
+  // clear view
+  $('threadViewCard').style.display='none';
 }
 
-// Group messages into threads by scanning for >>id references.
-// If message contains >><id> and that <id> exists -> treat as reply; else treat as OP
+/* ---------- Webhook helper ---------- */
+function webhookWithWait(url){ return url.includes('?') ? url + '&wait=true' : url + '?wait=true' }
+
+/* ---------- Post handler ---------- */
+async function onPost(){
+  statusEl.textContent = '';
+  if(!selectedBoard) { statusEl.textContent = 'Select a board'; return; }
+  const name = $('name').value.trim();
+  const comment = $('comment').value.trim();
+  const file = $('file').files[0];
+  const isThread = $('asThread').checked;
+  if(!comment && !file){ statusEl.textContent = 'Write something or attach an image.'; return; }
+  if(!$('fakeCaptcha').checked){ statusEl.textContent = 'Please confirm the captcha (demo)'; return; }
+
+  // cooldown check
+  const lastKey = `last_${selectedBoard}`;
+  const last = Number(localStorage.getItem(lastKey) || 0);
+  const nowTs = Date.now();
+  if(nowTs - last < COOLDOWN_SECONDS*1000){
+    statusEl.textContent = `Cooldown: wait ${Math.ceil((COOLDOWN_SECONDS*1000 - (nowTs-last))/1000)}s`;
+    return;
+  }
+  // daily limit
+  const dailyKey = `daily_${selectedBoard}`;
+  const daily = JSON.parse(localStorage.getItem(dailyKey) || '[]').filter(t => nowTs - t < 24*3600*1000);
+  if(daily.length >= DAILY_LIMIT){ statusEl.textContent = 'Daily limit reached for this board'; return; }
+
+  statusEl.textContent = 'Posting...';
+  const fd = new FormData();
+  const content = (name ? name + '\n' : '') + comment + (isThread ? '\n[THREAD]' : '');
+  fd.append('content', content);
+  if(file) fd.append('file', file);
+
+  try{
+    const url = webhookWithWait(selectedBoardWebhook);
+    const r = await fetch(url, { method: 'POST', body: fd });
+    if(!r.ok) throw new Error('post failed: ' + r.status);
+    const json = await r.json().catch(()=>({ id: String(Date.now()), content }));
+    // local optimistic add
+    const localKey = `posts_${selectedBoard}`;
+    const posts = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const post = { id: json.id || String(Date.now()), content: json.content || content, ts: json.timestamp || new Date().toISOString(), attachments: json.attachments || [], parent: null, isOP: isThread };
+    posts.unshift(post);
+    localStorage.setItem(localKey, JSON.stringify(posts));
+    // update cooldown/daily
+    localStorage.setItem(lastKey, String(nowTs));
+    daily.unshift(nowTs);
+    localStorage.setItem(dailyKey, JSON.stringify(daily));
+    statusEl.textContent = 'Posted ✓';
+    $('comment').value=''; $('file').value=''; $('asThread').checked=false;
+    // refresh shared view soon
+    setTimeout(()=> loadThreads(true), 1200);
+  }catch(e){
+    console.error(e);
+    statusEl.textContent = 'Error posting (console)';
+  }
+}
+
+/* ---------- Reply handler ---------- */
+async function onReply(){
+  const threadId = viewingThreadId;
+  if(!threadId){ $('replyStatus').textContent='No thread selected'; return; }
+  const name = $('replyName').value.trim();
+  const text = $('replyText').value.trim();
+  const file = $('replyFile').files[0];
+  if(!text && !file){ $('replyStatus').textContent='Write something or attach image'; return; }
+  const content = (name ? name + '\n' : '') + `>>${threadId}\n` + text;
+  const fd = new FormData(); fd.append('content', content); if(file) fd.append('file', file);
+  $('replyStatus').textContent = 'Posting reply...';
+  try{
+    const url = webhookWithWait(selectedBoardWebhook);
+    const r = await fetch(url, { method: 'POST', body: fd });
+    if(!r.ok) throw new Error('reply failed: ' + r.status);
+    const json = await r.json().catch(()=>({ id: String(Date.now()), content }));
+    // add local
+    const localKey = `posts_${selectedBoard}`;
+    const posts = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const post = { id: json.id || String(Date.now()), content: json.content || content, ts: json.timestamp || new Date().toISOString(), attachments: json.attachments || [], parent: threadId, isOP: false };
+    posts.unshift(post);
+    localStorage.setItem(localKey, JSON.stringify(posts));
+    $('replyStatus').textContent = 'Replied ✓';
+    $('replyText').value=''; $('replyFile').value='';
+    renderThreadView(threadId);
+    // refresh shared view
+    setTimeout(()=> loadThreads(true), 1200);
+  }catch(e){
+    console.error(e);
+    $('replyStatus').textContent = 'Error posting reply';
+  }
+}
+
+/* ---------- Load threads via Worker (shared) ---------- */
+async function loadThreads(force=false){
+  threadsEl.innerHTML = 'Loading…';
+  debugEl.style.display = 'none'; debugEl.textContent = '';
+  if(!WORKER_BASE || WORKER_BASE.includes('PASTE')) { threadsEl.innerHTML = 'Worker not configured; set WORKER_BASE in the HTML.'; return; }
+  if(!selectedBoard) { threadsEl.innerHTML = 'Select a board.'; return; }
+  const channel = BOARDS[selectedBoard] && BOARDS[selectedBoard].channel;
+  if(!channel){ threadsEl.innerHTML = 'Board missing channel id for reading.'; return; }
+
+  try{
+    const url = `${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${channel}&limit=80`;
+    const res = await fetch(url);
+    if(!res.ok){
+      const txt = await res.text().catch(()=>'');
+      threadsEl.innerHTML = 'Failed to load messages (server returned ' + res.status + ')';
+      debugEl.style.display = 'block'; debugEl.textContent = `URL: ${url}\nStatus: ${res.status}\nResponse:\n${txt}`;
+      return;
+    }
+    const data = await res.json();
+    // data is an array newest-first
+    // combine with local posts (optimistic) to ensure local posts appear
+    const localKey = `posts_${selectedBoard}`;
+    const localPosts = JSON.parse(localStorage.getItem(localKey) || '[]');
+    // Remove duplicates (by id)
+    const byId = new Map();
+    data.forEach(m => byId.set(m.id, m));
+    localPosts.forEach(lp => { if(!byId.has(lp.id)) byId.set(lp.id, { id: lp.id, content: lp.content, timestamp: lp.ts || lp.timestamp, author_name: lp.name || 'You', attachments: lp.attachments || [] }); });
+    const merged = Array.from(byId.values()).sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp)); // newest first
+    // group to threads
+    const threads = groupToThreads(merged);
+    renderThreads(threads);
+  }catch(e){
+    console.error(e);
+    threadsEl.innerHTML = 'Failed to load messages (console)';
+    debugEl.style.display = 'block';
+    debugEl.textContent = String(e);
+  }
+}
+
+/* ---------- Group into threads by >>id quoting ---------- */
 function groupToThreads(msgs){
-  // msgs: array newest-first from worker
-  const map = new Map(); // id -> message
+  // msgs newest-first
+  const map = new Map(); // id -> msg
   msgs.forEach(m => map.set(m.id, m));
   const threads = new Map(); // opId -> { op, replies: [] }
-  // start by assuming every message is an OP
+  // initialize with all messages as potential OP
+  msgs.forEach(m => threads.set(m.id, { op: m, replies: [] }));
+  // classify replies
   msgs.forEach(m => {
-    threads.set(m.id, { op: m, replies: [] });
-  });
-  // now classify replies
-  msgs.forEach(m => {
-    const match = m.content && m.content.match(/>>(\d+)/);
+    if(!m.content) return;
+    const match = m.content.match(/>>(\d+)/);
     if(match){
       const refId = match[1];
       if(map.has(refId)){
-        // it's a reply to refId
         const t = threads.get(refId) || { op: map.get(refId), replies: [] };
         t.replies.push(m);
         threads.set(refId, t);
@@ -161,55 +376,108 @@ function groupToThreads(msgs){
       }
     }
   });
-  // return threads as array ordered by op timestamp (newest first)
+  // return array newest-first by op timestamp
   return Array.from(threads.values()).sort((a,b)=> new Date(b.op.timestamp) - new Date(a.op.timestamp));
 }
 
-async function loadThreads(){
-  threadsEl.innerHTML = 'Loading…';
-  if(!WORKER_BASE || WORKER_BASE.includes('PASTE')) { threadsEl.innerHTML = 'Worker not configured. Set WORKER_BASE.'; return; }
-  const b = BOARDS[currentBoardKey];
-  if(!b || !b.channel){ threadsEl.innerHTML = 'Board missing channel id for reading.'; return; }
-  try{
-    const res = await fetch(`${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${b.channel}&limit=80`);
-    if(!res.ok) throw new Error('fetch failed: '+res.status);
-    const data = await res.json(); // array newest-first
-    // group into threads
-    const threads = groupToThreads(data);
-    renderThreads(threads);
-  }catch(e){
-    console.error(e);
-    threadsEl.innerHTML = 'Failed to load messages (console)';
-  }
-}
-
+/* ---------- Render thread list ---------- */
 function renderThreads(threads){
   threadsEl.innerHTML = '';
-  if(!threads.length){ threadsEl.innerHTML = '<div class="small">No threads found.</div>'; return; }
+  if(!threads || threads.length === 0){ threadsEl.innerHTML = '<div class="small">No threads found.</div>'; return; }
   threads.forEach(t => {
     const op = t.op;
-    const d = document.createElement('div'); d.className='post';
-    d.innerHTML = `<div class="small"><strong>${escapeHtml(op.author_name)}</strong> • ${new Date(op.timestamp).toLocaleString()}</div><div style="margin-top:6px">${formatContent(op.content)}</div>`;
-    if(op.attachments && op.attachments.length){
-      const img = document.createElement('img'); img.src = op.attachments[0].url; img.className='thumb'; d.appendChild(img);
+    const card = document.createElement('div'); card.className='thread-card';
+    const left = document.createElement('div'); left.style.width='120px';
+    if(op.attachments && op.attachments[0] && op.attachments[0].url){
+      const img = document.createElement('img'); img.src = op.attachments[0].url; img.className='thumb'; left.appendChild(img);
     }
-    // replies
-    if(t.replies && t.replies.length){
-      const replyWrap = document.createElement('div'); replyWrap.style.marginTop='8px';
-      t.replies.slice(0,6).forEach(r => {
-        const rr = document.createElement('div'); rr.className='post';
-        rr.style.marginTop='6px';
-        rr.innerHTML = `<div class="small">${escapeHtml(r.author_name)} • ${new Date(r.timestamp).toLocaleString()}</div><div style="margin-top:6px">${formatContent(r.content)}</div>`;
-        if(r.attachments && r.attachments[0]){ const im = document.createElement('img'); im.src = r.attachments[0].url; im.style.maxWidth='220px'; im.style.marginTop='6px'; rr.appendChild(im); }
-        replyWrap.appendChild(rr);
-      });
-      d.appendChild(replyWrap);
-    }
-    threadsEl.appendChild(d);
+    const right = document.createElement('div'); right.style.flex='1';
+    const header = document.createElement('div'); header.innerHTML = `<strong>${escapeHtml(op.author_name || 'unknown')}</strong> <span class="meta"> • ${new Date(op.timestamp).toLocaleString()}</span>`;
+    const body = document.createElement('div'); body.style.marginTop='8px'; body.innerHTML = formatText(op.content || '');
+    const meta = document.createElement('div'); meta.className='meta'; meta.style.marginTop='8px';
+    const replyCount = (t.replies && t.replies.length) ? t.replies.length : 0;
+    const open = document.createElement('a'); open.href='#'; open.textContent = `Open (${replyCount} replies)`; open.onclick = (e)=>{ e.preventDefault(); openThread(op.id); };
+    meta.appendChild(open);
+    right.appendChild(header); right.appendChild(body); right.appendChild(meta);
+    card.appendChild(left); card.appendChild(right);
+    threadsEl.appendChild(card);
   });
 }
 
-initUI();
+/* ---------- Thread view ---------- */
+function openThread(opId){
+  viewingThreadId = opId;
+  $('threadViewCard').style.display = 'block';
+  renderThreadView(opId);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderThreadView(opId){
+  const wrap = $('threadView');
+  wrap.innerHTML = '';
+  // find message and replies from merged view (call loadThreads to ensure latest, but we render from last loaded list)
+  const channel = BOARDS[selectedBoard].channel;
+  // fetch messages and then render thread specifically (ensures latest)
+  fetch(`${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${channel}&limit=200`)
+    .then(r=>r.json())
+    .then(data=>{
+      const byId = new Map(); data.forEach(m=>byId.set(m.id,m));
+      // include local posts too
+      const localPosts = JSON.parse(localStorage.getItem(`posts_${selectedBoard}`) || '[]');
+      localPosts.forEach(p=>{ if(!byId.has(p.id)) byId.set(p.id, { id: p.id, content: p.content, timestamp: p.ts, author_name: p.name||'You', attachments: p.attachments||[] }); });
+      const op = byId.get(opId);
+      if(!op){ wrap.innerHTML = '<div class="small">Thread not found (try Refresh or open in Discord)</div>'; return; }
+      const opDiv = document.createElement('div'); opDiv.className='post';
+      opDiv.innerHTML = `<div style="font-weight:700">${escapeHtml(op.author_name)}</div><div class="meta">${new Date(op.timestamp).toLocaleString()}</div><div style="margin-top:8px">${formatText(op.content)}</div>`;
+      if(op.attachments && op.attachments[0] && op.attachments[0].url){ const img=document.createElement('img'); img.src=op.attachments[0].url; img.style.maxWidth='480px'; img.style.marginTop='8px'; opDiv.appendChild(img); }
+      wrap.appendChild(opDiv);
+      // replies: messages that have >>opId or parent recorded locally
+      const replies = [];
+      byId.forEach(m=>{
+        if(m.content && m.content.includes('>>' + opId)) replies.push(m);
+        // also include local posts with parent === opId
+        const local = JSON.parse(localStorage.getItem(`posts_${selectedBoard}`) || '[]');
+        local.filter(p=>p.parent===opId).forEach(lp=>{ replies.push(lp); });
+      });
+      replies.sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
+      replies.forEach(r=>{
+        const d = document.createElement('div'); d.className='post reply';
+        d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||r.name||'unknown')} • ${new Date(r.timestamp).toLocaleString()}</div><div style="margin-top:6px">${formatText(r.content||r.content)}</div>`;
+        if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='320px'; im.style.marginTop='8px'; d.appendChild(im); }
+        wrap.appendChild(d);
+      });
+    })
+    .catch(e=>{
+      console.error(e);
+      wrap.innerHTML = '<div class="small">Failed to load thread (console)</div>';
+    });
+}
+
+/* ---------- Helpers: formatting ---------- */
+function formatText(text){
+  if(!text) return '';
+  let t = escapeHtml(text);
+  // greentext: lines starting with >
+  t = t.replace(/^&gt;(.+)$/gm, (m,p1) => `<div class="greentext">&gt;${escapeHtml(p1)}</div>`);
+  // >>id quoting highlight
+  t = t.replace(/&gt;&gt;(\d+)/g, (m,id) => `<span class="quote">&gt;&gt;${id}</span>`);
+  // linkify
+  t = t.replace(/(https?:\/\/[^\s]+)/g, m => `<a href="${m}" target="_blank">${m}</a>`);
+  return t.replace(/\n/g,'<br>');
+}
+function formatTextForPost(text){
+  // keep same formatting but avoid HTML injection
+  return formatText(text);
+}
+
+/* ---------- Debug helpers ---------- */
+function showDebug(msg){
+  debugEl.style.display = 'block';
+  debugEl.textContent = msg;
+}
+
+/* ---------- Initial auto-refresh ---------- */
+setInterval(()=>{ loadThreads(true); }, 20000);
 </script>
 </body>
 </html>
