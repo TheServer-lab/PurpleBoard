@@ -74,7 +74,7 @@ a{color:var(--accent)}
           <div style="display:flex;gap:8px;margin-top:8px"><button id="logoutBtn" class="small">Logout</button><button id="botLoginBtn" class="small">Login via Bot</button></div>
         </div>
       </div>
-      <div class="small" style="margin-top:8px">Register or login to post with a persistent name. Passwords are hashed in your browser before storage. (Demo only — don't use real passwords.)</div>
+      <div class="small" style="margin-top:8px">Register or login to post — names come from profiles. Passwords are hashed in your browser before storage. (Demo only — don't use real passwords.)</div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -89,9 +89,6 @@ a{color:var(--accent)}
         <div><strong>New Post / Thread</strong></div>
         <div class="small" id="selectedBoardName"></div>
       </div>
-
-      <label class="small" style="margin-top:8px">Name</label>
-      <input type="text" id="name" placeholder="Name (optional)">
 
       <label class="small" style="margin-top:8px">Comment</label>
       <textarea id="comment" rows="4" placeholder="Say something (use >greentext or >>messageId to quote)"></textarea>
@@ -136,7 +133,6 @@ a{color:var(--accent)}
       <div id="threadView" class="thread-view"></div>
 
       <div style="margin-top:8px" class="post">
-        <input id="replyName" placeholder="Name (optional)">
         <textarea id="replyText" rows="3" placeholder="Reply"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px">
           <input id="replyFile" type="file" accept="image/*">
@@ -275,8 +271,7 @@ async function onPost(){
   $('status').textContent = '';
   if(!selectedBoard){ $('status').textContent='Select a board'; return; }
   const cur = getCurrentUser();
-  const nameField = $('name').value.trim();
-  const author = cur && cur.username ? cur.username : (nameField || 'Anonymous');
+  const author = cur && cur.username ? cur.username : 'Anonymous';
   const comment = $('comment').value.trim(); const file = $('file').files[0]; const isThread = $('asThread').checked;
   if(!comment && !file){ $('status').textContent='Write something or attach an image'; return; }
   if(!$('fakeCaptcha').checked){ $('status').textContent='Complete captcha (demo)'; return; }
@@ -308,8 +303,7 @@ async function onPost(){
 async function onReply(){
   const threadId = viewingThreadId; if(!threadId){ $('replyStatus').textContent='No thread selected'; return; }
   const cur = getCurrentUser();
-  const nameField = $('replyName').value.trim();
-  const author = cur && cur.username ? cur.username : (nameField || 'Anonymous');
+  const author = cur && cur.username ? cur.username : 'Anonymous';
   const text = $('replyText').value.trim(); const file = $('replyFile').files[0];
   if(!text && !file){ $('replyStatus').textContent='Write something or attach image'; return; }
   const content = (author?author+'\n':'') + `>>${threadId}\n` + text;
@@ -413,8 +407,9 @@ function renderThreads(threads){
     const shareBtn = document.createElement('button'); shareBtn.className='action-btn'; shareBtn.textContent='Share'; shareBtn.onclick = (e)=>{ e.stopPropagation(); sharePost(op.id); };
     const shareSiteBtn = document.createElement('button'); shareSiteBtn.className='action-btn'; shareSiteBtn.textContent='Share (site)'; shareSiteBtn.onclick = (e)=>{ e.stopPropagation(); shareViaSite(op.id, op); };
     const quoteBtn = document.createElement('button'); quoteBtn.className='action-btn'; quoteBtn.textContent='Quote'; quoteBtn.onclick = (e)=>{ e.stopPropagation(); insertQuote(op.id); };
+    const profileBtn = document.createElement('button'); profileBtn.className='action-btn'; profileBtn.textContent='Profile'; profileBtn.onclick = (e)=>{ e.stopPropagation(); openProfile(op.author_name||op.name||'unknown'); };
     const repliesCount = document.createElement('span'); repliesCount.className='permalink'; repliesCount.textContent = `${t.replies.length} replies`;
-    actions.appendChild(shareBtn); actions.appendChild(shareSiteBtn); actions.appendChild(quoteBtn); actions.appendChild(repliesCount);
+    actions.appendChild(shareBtn); actions.appendChild(shareSiteBtn); actions.appendChild(quoteBtn); actions.appendChild(profileBtn); actions.appendChild(repliesCount);
 
     right.appendChild(header); right.appendChild(body); right.appendChild(actions);
     card.appendChild(left); card.appendChild(right);
@@ -448,11 +443,16 @@ function renderThreadView(opId){
     opDiv.innerHTML = `<div style="font-weight:700">${escapeHtml(op.author_name||op.name||'unknown')}</div><div class="meta">${new Date(op.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(op.timestamp)})</span></div><div style="margin-top:8px">${formatText(op.content)}</div>`;
     if(op.attachments && op.attachments[0] && op.attachments[0].url){ const im=document.createElement('img'); im.src=op.attachments[0].url; im.style.maxWidth='640px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); opDiv.appendChild(im); }
     wrap.appendChild(opDiv);
+    // append profile button to OP meta
+    const opMeta = opDiv.querySelector('.meta'); if(opMeta){ const btn=document.createElement('button'); btn.className='action-btn'; btn.textContent='Profile'; btn.style.marginLeft='8px'; btn.onclick=()=>openProfile(op.author_name||op.name||'unknown'); opMeta.appendChild(btn); }
     const replies = [];
     byId.forEach(m=>{ if(m.content && m.content.includes('>>'+opId)) replies.push(m); });
     local.filter(p=>p.parent===opId).forEach(lp=>replies.push(lp));
     replies.sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
-    replies.forEach(r=>{ const d = document.createElement('div'); d.className='post reply'; d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||r.name||'unknown')} • ${new Date(r.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(r.timestamp)})</span></div><div style="margin-top:6px">${formatText(r.content)}</div>`; if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='420px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); d.appendChild(im); } wrap.appendChild(d); });
+    replies.forEach(r=>{ const d = document.createElement('div'); d.className='post reply'; d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||r.name||'unknown')} • ${new Date(r.timestamp).toLocaleString()} <span class="timeago">(${timeAgo(r.timestamp)})</span></div><div style="margin-top:6px">${formatText(r.content)}</div>`; if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='420px'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); d.appendChild(im); }
+      // append profile button to reply meta
+      const metaEl = d.querySelector('.meta'); if(metaEl){ const pbtn = document.createElement('button'); pbtn.className='action-btn'; pbtn.textContent='Profile'; pbtn.style.marginLeft='8px'; pbtn.onclick = ()=> openProfile(r.author_name||r.name||'unknown'); metaEl.appendChild(pbtn); }
+      wrap.appendChild(d); });
   }).catch(e=>{ console.error(e); wrap.innerHTML='<div class="small">Failed to load thread</div>'; });
 }
 
@@ -467,6 +467,8 @@ function formatText(text){
 }
 function findThreadById(id){ return threadsEl.querySelector(`.quote[data-id="${id}"]`); }
 function discordPermalink(messageId){ const channel = BOARDS[selectedBoard].channel; return `https://discord.com/channels/${GUILD_ID}/${channel}/${messageId}`; }
+
+function openProfile(username){ if(!username) return; const url = WORKER_BASE.replace(/\/$/,'') + '/profile?username=' + encodeURIComponent(username); window.open(url, '_blank'); }
 
 async function sharePost(messageId){ // legacy: copy discord permalink & navigator.share
   const url = discordPermalink(messageId);
