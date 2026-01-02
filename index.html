@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Purple Board — Debugged</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Purple Board — Fixed</title>
 <style>
 :root{
   --bg:#120018; --accent:#a86ff9; --muted:#cdb6ff; --text:#efe6ff; --card-border: rgba(255,255,255,0.04);
@@ -20,7 +20,7 @@ textarea{resize:vertical}
 button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;padding:8px}
 .small{font-size:13px;color:var(--muted)}
 .thread-list{display:flex;flex-direction:column;gap:12px}
-.thread-card{display:flex;gap:12px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);cursor:pointer}
+.thread-card{display:flex;gap:12px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);cursor:pointer;align-items:flex-start}
 .thumb{width:120px;height:auto;border-radius:6px;object-fit:cover}
 .meta{font-size:12px;color:var(--muted)}
 .quote{background:rgba(255,255,255,0.02);color:var(--muted);padding:4px;border-radius:6px;display:inline-block;cursor:pointer}
@@ -28,13 +28,14 @@ button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;paddi
 .debug{font-family:monospace;font-size:12px;color:var(--muted);white-space:pre-wrap;margin-top:8px;background:rgba(0,0,0,0.12);padding:8px;border-radius:6px}
 .lightbox{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);z-index:9999}
 .lightbox img{max-width:95%;max-height:95%;border-radius:8px}
-.copy-toast{position:fixed;right:18px;bottom:18px;background:#1b0b2a;padding:8px 12px;border-radius:8px;color:var(--muted)}
+.copy-toast{position:fixed;right:18px;bottom:18px;background:#1b0b2a;padding:8px 12px;border-radius:8px;color:var(--muted);border:1px solid rgba(255,255,255,0.04)}
 @media (max-width:880px){ .container{grid-template-columns:1fr} .thumb{display:none} }
+a{color:var(--accent)}
 </style>
 </head>
 <body>
 <header>
-  <h1 style="margin:0">Purple Board (debug)</h1>
+  <h1 style="margin:0">Purple Board — Fixed</h1>
   <div class="small">If it still breaks, copy the Debug box and paste here.</div>
 </header>
 
@@ -45,7 +46,7 @@ button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;paddi
 
     <div class="card" style="margin-top:12px">
       <strong>Notes</strong>
-      <div class="small" style="margin-top:8px">Make sure WORKER_BASE and BOARDS.channel are set to your worker URL and Discord numeric channel IDs.</div>
+      <div class="small" style="margin-top:8px">Make sure WORKER_BASE and BOARDS.channel are correct (worker URL + numeric channel IDs).</div>
     </div>
   </aside>
 
@@ -54,17 +55,26 @@ button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;paddi
       <strong>Post</strong>
       <label class="small">Board</label>
       <select id="boardSelect"></select>
-      <label class="small">Name</label>
+
+      <label class="small" style="margin-top:8px">Name</label>
       <input id="name" placeholder="Name (optional)">
-      <label class="small">Comment</label>
-      <textarea id="comment" rows="4"></textarea>
-      <label class="small">Attach image</label>
+
+      <label class="small" style="margin-top:8px">Comment</label>
+      <textarea id="comment" rows="4" placeholder="Use >greentext and >>123 to quote"></textarea>
+
+      <label class="small" style="margin-top:8px">Attach image</label>
       <input id="file" type="file" accept="image/*">
+
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <label style="display:flex;align-items:center;gap:8px"><input id="fakeCaptcha" type="checkbox"> I'm human (demo)</label>
+      </div>
+
       <div style="display:flex;gap:8px;margin-top:8px">
         <button id="postBtn" class="primary">Post</button>
         <button id="refreshBtn">Refresh</button>
         <button id="healthBtn">Worker health</button>
       </div>
+
       <div id="status" class="small" style="margin-top:8px"></div>
     </div>
 
@@ -76,25 +86,27 @@ button.primary{background:var(--accent);border:0;color:#fff;cursor:pointer;paddi
   </main>
 </div>
 
-<div id="lightbox" class="lightbox" style="display:none" onclick="hideLightbox()"><img id="lightboxImg" /></div>
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox" style="display:none" onclick="hideLightbox()"><img id="lightboxImg" src="" alt=""/></div>
+<!-- Copy toast -->
 <div id="copyToast" class="copy-toast" style="display:none">Copied</div>
 
 <script>
-/* ======= CONFIG =======
-   Replace these with your deployed values
+/* ========== CONFIG ========== 
+ Replace with your worker URL + board webhook/channel IDs 
 */
 const WORKER_BASE = 'https://pbordworker.dassouraasish.workers.dev';
 const BOARDS = {
-  art: { webhook: 'PASTE_WEBHOOK', channel: '1456573205237203045' },
-  tech: { webhook: 'PASTE_WEBHOOK', channel: '1456573234009997453' },
-  random: { webhook: 'PASTE_WEBHOOK', channel: '1456573259561701490' }
+  art: { webhook: "https://discord.com/api/webhooks/1456573325148164128/UlQfAb8WE1hWw_uBCs01QPuLjuBg4HAjKAyifGjs0-YDqjIB75Ee1RMvBX0EmoXwE8Xi", channel: "1456573205237203045" },
+  tech: { webhook: "https://discord.com/api/webhooks/1456573404521173041/pxVoHmjnnYTjwEH1EDmf6uMvVbQD3vPogizcyt_5T16AaNUStyw3XyWEniiCvRegprAg", channel: "1456573234009997453" },
+  random: { webhook: "https://discord.com/api/webhooks/1456573475815690395/lb5_p1w6MXf852xPI67v9BPRqSicH_gvpf1C2ki2AmKyb7xL0nUHCrBhsBRrxzSrD26P", channel: "1456573259561701490" }
 };
 const COOLDOWN_SECONDS = 12;
 const DAILY_LIMIT = 200;
 const GUILD_ID = '1283171828214534165';
-/* ======================= */
+/* ============================== */
 
-/* Basic DOM refs */
+/* DOM refs */
 const $ = id => document.getElementById(id);
 const boardList = $('boardList');
 const boardSelect = $('boardSelect');
@@ -103,135 +115,169 @@ const debugEl = $('debug');
 const statusEl = $('status');
 const copyToast = $('copyToast');
 
-/* Small utilities */
-function logDebug(text){ debugEl.style.display='block'; debugEl.textContent = String(text); console.log(text); }
-function hideDebug(){ debugEl.style.display='none'; debugEl.textContent=''; }
-function showToast(msg){ copyToast.textContent = msg; copyToast.style.display='block'; setTimeout(()=>copyToast.style.display='none',2000); }
-function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
-function timeAgo(ts){ const t=Date.parse(ts); if(isNaN(t)) return ''; const s=Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
-
-/* Error handlers (show errors in page) */
-window.addEventListener('error', (ev)=>{
-  const msg = `ERROR: ${ev.message} at ${ev.filename}:${ev.lineno}:${ev.colno}\n${ev.error && ev.error.stack ? ev.error.stack : ''}`;
-  logDebug(msg);
-});
-window.addEventListener('unhandledrejection', (ev)=>{
-  const msg = `Uncaught Rejection: ${ev.reason && ev.reason.stack ? ev.reason.stack : JSON.stringify(ev.reason)}`;
-  logDebug(msg);
-});
-
-/* Init UI */
-function initUI(){
-  boardList.innerHTML=''; boardSelect.innerHTML='';
-  for(const k in BOARDS){
-    const b = document.createElement('button'); b.textContent = '/'+k+'/'; b.onclick = ()=> selectBoard(k,b); boardList.appendChild(b);
-    const opt = document.createElement('option'); opt.value = k; opt.textContent = '/'+k+'/'; boardSelect.appendChild(opt);
-  }
-  const first = Object.keys(BOARDS)[0];
-  selectBoard(first, boardList.querySelector('button'));
-  $('postBtn').addEventListener('click', onPost);
-  $('refreshBtn').addEventListener('click', ()=> loadThreads(true));
-  $('healthBtn').addEventListener('click', checkHealth);
-  boardSelect.addEventListener('change', ()=> selectBoard(boardSelect.value));
-}
-initUI();
-
-/* board selection */
+/* global state (declared before calling initUI) */
 let selectedBoard = null;
 let selectedWebhook = null;
+
+/* small utilities */
+function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
+function logDebug(v){ debugEl.style.display='block'; debugEl.textContent = typeof v === 'string' ? v : JSON.stringify(v, null, 2); console.log(v); }
+function hideDebug(){ debugEl.style.display='none'; debugEl.textContent=''; }
+function showToast(msg){ copyToast.textContent = msg; copyToast.style.display='block'; setTimeout(()=> copyToast.style.display='none', 1800); }
+function timeAgo(ts){ const t = Date.parse(ts); if(isNaN(t)) return ''; const s = Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
+
+/* error handlers */
+window.addEventListener('error', ev => logDebug(`ERROR: ${ev.message} at ${ev.filename}:${ev.lineno}:${ev.colno}\n${ev.error && ev.error.stack?ev.error.stack:''}`));
+window.addEventListener('unhandledrejection', ev => logDebug(`UnhandledRejection: ${ev.reason && ev.reason.stack ? ev.reason.stack : JSON.stringify(ev.reason)}`));
+
+/* selectBoard — declared before initUI so it's available during init */
 function selectBoard(key, btn){
-  boardList.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+  boardList.querySelectorAll('button').forEach(b => b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   selectedBoard = key;
   selectedWebhook = BOARDS[key] && BOARDS[key].webhook;
+  // sync select control
+  if(boardSelect.value !== key) boardSelect.value = key;
 }
 
-/* webhook post helper */
-function webhookWithWait(url){ return url.includes('?') ? url + '&wait=true' : url + '?wait=true' }
+/* init UI */
+function initUI(){
+  boardList.innerHTML = '';
+  boardSelect.innerHTML = '';
+  for(const k of Object.keys(BOARDS)){
+    const b = document.createElement('button');
+    b.textContent = '/' + k + '/';
+    b.onclick = () => selectBoard(k, b);
+    boardList.appendChild(b);
 
-/* Posting */
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = '/' + k + '/';
+    boardSelect.appendChild(opt);
+  }
+
+  // pick param board if provided
+  const params = new URLSearchParams(window.location.search);
+  const boardParam = params.get('board');
+  const first = (boardParam && BOARDS[boardParam]) ? boardParam : Object.keys(BOARDS)[0];
+  if(first){
+    const firstBtn = boardList.querySelector('button');
+    selectBoard(first, firstBtn);
+  }
+
+  // wire events
+  $('postBtn').addEventListener('click', onPost);
+  $('refreshBtn').addEventListener('click', () => loadThreads(true));
+  $('healthBtn').addEventListener('click', checkHealth);
+  boardSelect.addEventListener('change', () => {
+    const key = boardSelect.value;
+    const btn = Array.from(boardList.querySelectorAll('button')).find(b=>b.textContent === '/' + key + '/');
+    selectBoard(key, btn);
+    loadThreads(true);
+  });
+
+  // ctrl/cmd+enter to post
+  document.addEventListener('keydown', e => {
+    if((e.ctrlKey||e.metaKey) && e.key === 'Enter') { e.preventDefault(); onPost(); }
+  });
+
+  // load threads and optionally open thread from URL param
+  loadThreads(false).then(()=> {
+    const threadParam = params.get('thread');
+    if(threadParam) {
+      // small delay to let threads render
+      setTimeout(()=> {
+        try { openThread(threadParam); window.scrollTo({ top: 0, behavior: 'smooth' }); } catch(e) { console.warn('auto-open thread failed', e); }
+      }, 300);
+    }
+  }).catch(e => logDebug(e.stack || e));
+}
+initUI();
+
+/* webhook helper */
+function webhookWithWait(url){ return url.includes('?') ? url + '&wait=true' : url + '?wait=true'; }
+
+/* posting */
 async function onPost(){
   statusEl.textContent=''; hideDebug();
-  if(!selectedBoard){ statusEl.textContent='Select a board'; return; }
+  if(!selectedBoard){ statusEl.textContent = 'Select a board'; return; }
   const name = $('name').value.trim();
-  const text = $('comment').value.trim();
+  const comment = $('comment').value.trim();
   const file = $('file').files[0];
-  if(!text && !file){ statusEl.textContent='Write or attach image'; return; }
-  // captcha demo
-  if(!$('fakeCaptcha') || !$('fakeCaptcha').checked){ statusEl.textContent='Check demo captcha'; return; }
+
+  if(!comment && !file){ statusEl.textContent = 'Write something or attach an image'; return; }
+  // demo captcha requirement (present in UI)
+  if(!$('fakeCaptcha') || !$('fakeCaptcha').checked){ statusEl.textContent = 'Please confirm the demo captcha'; return; }
+
   // cooldown
-  const lastKey = `last_${selectedBoard}`; const last = Number(localStorage.getItem(lastKey)||0); const now=Date.now();
-  if(now - last < COOLDOWN_SECONDS*1000){ statusEl.textContent = `Cooldown: wait ${Math.ceil((COOLDOWN_SECONDS*1000 - (now-last))/1000)}s`; return; }
-  statusEl.textContent = 'Posting...';
-  const fd = new FormData(); fd.append('content', (name?name+'\n':'') + text);
+  const lastKey = `last_${selectedBoard}`; const last = Number(localStorage.getItem(lastKey) || 0); const now = Date.now();
+  if(now - last < COOLDOWN_SECONDS * 1000){ statusEl.textContent = `Cooldown: wait ${Math.ceil((COOLDOWN_SECONDS*1000 - (now-last))/1000)}s`; return; }
+
+  const fd = new FormData();
+  const content = (name ? name + '\n' : '') + comment;
+  fd.append('content', content);
   if(file) fd.append('file', file);
+
+  statusEl.textContent = 'Posting...';
   try{
-    if(!selectedWebhook){ throw new Error('Webhook not configured for this board'); }
-    const res = await fetch(webhookWithWait(selectedWebhook), { method:'POST', body: fd });
-    if(!res.ok) {
-      const body = await res.text().catch(()=>'');
-      throw new Error('Webhook returned '+res.status + ' body: ' + body);
-    }
-    // success, store local optimistic post
-    const json = await res.json().catch(()=>({ id: String(Date.now()), content: (name?name+'\n':'')+text }));
-    const localKey = `posts_${selectedBoard}`; const posts = JSON.parse(localStorage.getItem(localKey)||'[]');
-    posts.unshift({ id: json.id||String(Date.now()), content: json.content || text, timestamp: json.timestamp || new Date().toISOString(), attachments: json.attachments || [] });
+    if(!selectedWebhook) throw new Error('Webhook missing in BOARDS for this board');
+    const res = await fetch(webhookWithWait(selectedWebhook), { method: 'POST', body: fd });
+    const txt = await res.text().catch(()=> '');
+    if(!res.ok) { throw new Error('Webhook error: ' + res.status + ' — ' + txt); }
+    let json = {};
+    try { json = JSON.parse(txt); } catch(e) { json = { id: String(Date.now()), content }; }
+    // optimistic local storage
+    const localKey = `posts_${selectedBoard}`; const posts = JSON.parse(localStorage.getItem(localKey) || '[]');
+    posts.unshift({ id: json.id || String(Date.now()), content: json.content || content, timestamp: json.timestamp || new Date().toISOString(), attachments: json.attachments || [] });
     localStorage.setItem(localKey, JSON.stringify(posts));
     localStorage.setItem(lastKey, String(now));
     statusEl.textContent = 'Posted ✓';
-    $('comment').value=''; $('file').value='';
+    $('comment').value = ''; $('file').value = ''; $('fakeCaptcha').checked = false;
     setTimeout(()=> loadThreads(true), 1000);
   }catch(err){
     console.error(err);
-    statusEl.textContent = 'Post failed: ' + (err.message || err);
-    logDebug('Post error: ' + (err.stack || err));
+    statusEl.textContent = 'Post failed — see debug';
+    logDebug(err.stack || err.toString());
   }
 }
 
-/* Load threads from Worker */
-async function loadThreads(force=false){
-  threadsEl.innerHTML = 'Loading…'; hideDebug(); statusEl.textContent='';
-  if(!WORKER_BASE || WORKER_BASE.includes('PASTE')){ threadsEl.innerHTML = 'Set WORKER_BASE in the page.'; return; }
-  if(!selectedBoard){ threadsEl.innerHTML = 'Select a board.'; return; }
+/* load via worker */
+async function loadThreads(force = false){
+  threadsEl.innerHTML = 'Loading…'; hideDebug(); statusEl.textContent = '';
+  if(!WORKER_BASE || WORKER_BASE.includes('PASTE')) { threadsEl.innerHTML = 'Set WORKER_BASE in config'; return; }
+  if(!selectedBoard){ threadsEl.innerHTML = 'Select a board'; return; }
   const channel = BOARDS[selectedBoard] && BOARDS[selectedBoard].channel;
-  if(!channel){ threadsEl.innerHTML = 'Board missing channel id.'; return; }
+  if(!channel){ threadsEl.innerHTML = 'Board missing channel id'; return; }
 
   const url = `${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${channel}&limit=80`;
   try{
     const res = await fetch(url);
-    const text = await res.text();
-    // if non-JSON, show
-    try {
-      if(!res.ok){
-        logDebug({ url, status: res.status, body: text });
-        threadsEl.innerHTML = `Failed to load (${res.status}) — see debug.`;
-        return;
-      }
-      const data = JSON.parse(text);
-      // merge local optimistic
-      const localKey = `posts_${selectedBoard}`; const localPosts = JSON.parse(localStorage.getItem(localKey)||'[]');
-      const byId = new Map(); data.forEach(m=>byId.set(m.id, m));
-      localPosts.forEach(lp => { if(!byId.has(lp.id)) byId.set(lp.id, { id: lp.id, content: lp.content, timestamp: lp.timestamp || lp.ts || new Date().toISOString(), author_name: lp.author_name || 'You', attachments: lp.attachments || [] }); });
-      const merged = Array.from(byId.values()).sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
-      const threads = groupToThreads(merged);
-      renderThreads(threads);
-    } catch(parseErr){
-      logDebug({ url, status: res.status, text });
-      threadsEl.innerHTML = 'Invalid JSON from Worker — see debug';
+    const body = await res.text();
+    if(!res.ok){
+      logDebug({ url, status: res.status, body });
+      threadsEl.innerHTML = `Failed to load messages (server ${res.status}) — see debug`;
+      return;
     }
+    const data = JSON.parse(body);
+    // merge with local optimistic posts
+    const localKey = `posts_${selectedBoard}`; const localPosts = JSON.parse(localStorage.getItem(localKey) || '[]');
+    const byId = new Map(); data.forEach(m => byId.set(m.id, m));
+    localPosts.forEach(lp => { if(!byId.has(lp.id)) byId.set(lp.id, { id: lp.id, content: lp.content, timestamp: lp.timestamp || lp.ts || new Date().toISOString(), author_name: lp.author_name || 'You', attachments: lp.attachments || [] }); });
+    const merged = Array.from(byId.values()).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const threads = groupToThreads(merged);
+    renderThreads(threads);
+    return threads;
   }catch(err){
     console.error(err);
-    threadsEl.innerHTML = 'Fetch failed — see debug';
-    logDebug(err.stack || err);
+    threadsEl.innerHTML = 'Failed to load messages — see debug';
+    logDebug(err.stack || err.toString());
   }
-  return;
 }
 
-/* Group into threads by >>id */
+/* group into threads by >>id */
 function groupToThreads(msgs){
-  const map = new Map(); msgs.forEach(m=>map.set(m.id,m));
-  const threads = new Map(); msgs.forEach(m=>threads.set(m.id,{ op:m, replies:[] }));
-  msgs.forEach(m=>{
+  const map = new Map(); msgs.forEach(m => map.set(m.id, m));
+  const threads = new Map(); msgs.forEach(m => threads.set(m.id, { op: m, replies: [] }));
+  msgs.forEach(m => {
     if(!m.content) return;
     const match = m.content.match(/>>(\d{1,20})/);
     if(match){
@@ -244,147 +290,159 @@ function groupToThreads(msgs){
       }
     }
   });
-  return Array.from(threads.values()).sort((a,b)=> new Date(b.op.timestamp) - new Date(a.op.timestamp));
+  return Array.from(threads.values()).sort((a,b) => new Date(b.op.timestamp) - new Date(a.op.timestamp));
 }
 
-/* Render threads */
+/* render threads */
 function renderThreads(threads){
   threadsEl.innerHTML = '';
-  if(!threads || threads.length===0){ threadsEl.innerHTML = '<div class="small">No threads</div>'; return; }
-  threads.forEach(t=>{
+  if(!threads || threads.length === 0){ threadsEl.innerHTML = '<div class="small">No threads</div>'; return; }
+  threads.forEach(t => {
     const op = t.op;
-    const card = document.createElement('div'); card.className='thread-card';
-    card.addEventListener('click',(e)=>{ if(e.target.closest('.action-btn')) return; openThread(op.id); });
-    const left = document.createElement('div'); left.style.width='120px';
+    const card = document.createElement('div'); card.className = 'thread-card';
+    card.addEventListener('click', (e) => { if(e.target.closest('.action-btn')) return; openThread(op.id); });
+
+    const left = document.createElement('div'); left.style.width = '120px';
     if(op.attachments && op.attachments[0] && op.attachments[0].url){
-      const img = document.createElement('img'); img.src = op.attachments[0].url; img.className='thumb';
-      img.onclick = (ev)=>{ ev.stopPropagation(); showLightbox(op.attachments[0].url); };
+      const img = document.createElement('img'); img.src = op.attachments[0].url; img.className = 'thumb'; img.loading = 'lazy';
+      img.onclick = ev => { ev.stopPropagation(); showLightbox(op.attachments[0].url); };
       left.appendChild(img);
     }
-    const right = document.createElement('div'); right.style.flex='1';
+    const right = document.createElement('div'); right.style.flex = '1';
     const header = document.createElement('div'); header.innerHTML = `<strong>${escapeHtml(op.author_name || 'unknown')}</strong> <span class="meta">${timeAgo(op.timestamp)}</span>`;
-    const body = document.createElement('div'); body.style.marginTop='8px'; body.innerHTML = formatText(op.content || '');
-    const actions = document.createElement('div'); actions.style.marginTop='8px';
-    const share = document.createElement('button'); share.className='action-btn'; share.textContent='Share'; share.onclick = (e)=>{ e.stopPropagation(); sharePost(op.id); };
-    const quote = document.createElement('button'); quote.className='action-btn'; quote.textContent='Quote'; quote.onclick=(e)=>{ e.stopPropagation(); insertQuote(op.id); };
-    const count = document.createElement('span'); count.className='meta'; count.style.marginLeft='8px'; count.textContent = `${t.replies.length} replies`;
+    const body = document.createElement('div'); body.style.marginTop = '8px'; body.innerHTML = formatText(op.content || '');
+    const actions = document.createElement('div'); actions.style.marginTop = '8px';
+    const share = document.createElement('button'); share.className='action-btn'; share.textContent='Share'; share.onclick = e => { e.stopPropagation(); sharePost(op.id); };
+    const quote = document.createElement('button'); quote.className='action-btn'; quote.textContent='Quote'; quote.onclick = e => { e.stopPropagation(); insertQuote(op.id); };
+    const count = document.createElement('span'); count.className='meta'; count.style.marginLeft = '8px'; count.textContent = `${t.replies.length} replies`;
     actions.appendChild(share); actions.appendChild(quote); actions.appendChild(count);
+
     right.appendChild(header); right.appendChild(body); right.appendChild(actions);
     card.appendChild(left); card.appendChild(right);
     threadsEl.appendChild(card);
-    // bind quote clicks inside body
-    body.querySelectorAll('.quote').forEach(q=>{
-      q.addEventListener('click', ev=>{
+
+    // wire >>id clicks inside this post body
+    body.querySelectorAll('.quote').forEach(q => {
+      q.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const id = q.dataset.id;
-        // try to open thread if present, else insert quote
+        // try find thread in DOM; otherwise insert quote into composer
         const found = threadsEl.querySelector(`.quote[data-id="${id}"]`);
-        if(found) openThread(id);
-        else { insertQuote(id); statusEl.textContent = `Quoted >>${id}`; setTimeout(()=>statusEl.textContent='',1500); }
+        if(found) openThread(id); else { insertQuote(id); statusEl.textContent = `Inserted >>${id}`; setTimeout(()=> statusEl.textContent='', 1500); }
       });
     });
   });
 }
 
-/* Thread view */
-let viewing = null;
-function openThread(id){
-  viewing = id;
-  // show thread view in bottom of page (simple)
-  const winTop = 0;
-  window.scrollTo({ top: winTop, behavior: 'smooth' });
-  renderThreadView(id);
-}
-async function renderThreadView(opId){
-  // reuse worker fetch
+/* open thread - shows a centered card popup with OP + replies */
+async function openThread(opId){
+  // fetch latest batch then render popup
   const channel = BOARDS[selectedBoard].channel;
   const url = `${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${channel}&limit=200`;
   try{
     const res = await fetch(url);
-    const text = await res.text();
-    if(!res.ok){ logDebug({ url, status: res.status, text }); alert('Failed to load thread; see debug'); return; }
-    const data = JSON.parse(text);
-    const byId = new Map(); data.forEach(m=>byId.set(m.id,m));
+    const txt = await res.text();
+    if(!res.ok){ logDebug({ url, status: res.status, body: txt }); alert('Failed to load thread — see debug'); return; }
+    const data = JSON.parse(txt);
+    const byId = new Map(); data.forEach(m => byId.set(m.id, m));
     const local = JSON.parse(localStorage.getItem(`posts_${selectedBoard}`) || '[]');
-    local.forEach(p=>{ if(!byId.has(p.id)) byId.set(p.id,p); });
+    local.forEach(p => { if(!byId.has(p.id)) byId.set(p.id, p); });
+
     const op = byId.get(opId);
     if(!op){ alert('Thread not found'); return; }
-    // build a simple view popup
-    const container = document.createElement('div');
-    container.className = 'card';
-    container.style.position = 'fixed';
-    container.style.left = '50%';
-    container.style.top = '50%';
-    container.style.transform = 'translate(-50%, -50%)';
-    container.style.width = '90%';
-    container.style.maxWidth = '900px';
-    container.style.zIndex = 9999;
-    container.innerHTML = `<div style="display:flex;justify-content:space-between"><strong>Thread ${opId}</strong><button id="closeThreadBtn">Close</button></div><div style="margin-top:8px" id="threadContent"></div>`;
-    document.body.appendChild(container);
-    document.getElementById('closeThreadBtn').onclick = ()=> container.remove();
-    const threadContent = container.querySelector('#threadContent');
-    const opDiv = document.createElement('div'); opDiv.className='post';
-    opDiv.innerHTML = `<div><strong>${escapeHtml(op.author_name||'unknown')}</strong> <span class="meta">${timeAgo(op.timestamp)}</span></div><div style="margin-top:8px">${formatText(op.content)}</div>`;
-    if(op.attachments && op.attachments[0] && op.attachments[0].url){ const im = document.createElement('img'); im.src = op.attachments[0].url; im.style.maxWidth='100%'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); opDiv.appendChild(im); }
-    threadContent.appendChild(opDiv);
+
+    // build popup
+    const popup = document.createElement('div');
+    popup.className = 'card';
+    popup.style.position = 'fixed';
+    popup.style.left = '50%';
+    popup.style.top = '50%';
+    popup.style.transform = 'translate(-50%,-50%)';
+    popup.style.width = '90%';
+    popup.style.maxWidth = '900px';
+    popup.style.zIndex = 9999;
+    popup.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><strong>Thread ${opId}</strong><div><button id="closePopupBtn">Close</button></div></div><div id="popupContent" style="margin-top:10px"></div>`;
+    document.body.appendChild(popup);
+    document.getElementById('closePopupBtn').onclick = ()=> popup.remove();
+
+    const content = popup.querySelector('#popupContent');
+    const opDiv = document.createElement('div'); opDiv.className = 'post';
+    opDiv.innerHTML = `<div><strong>${escapeHtml(op.author_name || 'unknown')}</strong> <span class="meta">${timeAgo(op.timestamp)}</span></div><div style="margin-top:8px">${formatText(op.content)}</div>`;
+    if(op.attachments && op.attachments[0] && op.attachments[0].url){ const im=document.createElement('img'); im.src = op.attachments[0].url; im.style.maxWidth = '100%'; im.style.marginTop = '8px'; im.onclick = ()=> showLightbox(im.src); opDiv.appendChild(im); }
+    content.appendChild(opDiv);
+
     // replies
     const replies = [];
-    byId.forEach(m=>{ if(m.content && m.content.includes('>>'+opId)) replies.push(m); });
-    replies.sort((a,b)=> new Date(a.timestamp) - new Date(b.timestamp));
-    replies.forEach(r=>{ const d = document.createElement('div'); d.className='post'; d.style.marginTop='8px'; d.innerHTML = `<div class="meta">${escapeHtml(r.author_name||'unknown')} • ${timeAgo(r.timestamp)}</div><div style="margin-top:6px">${formatText(r.content)}</div>`; if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im=document.createElement('img'); im.src=r.attachments[0].url; im.style.maxWidth='100%'; im.style.marginTop='8px'; im.onclick=()=>showLightbox(im.src); d.appendChild(im); } threadContent.appendChild(d); });
-  } catch(err){
+    byId.forEach(m => { if(m.content && m.content.includes('>>' + opId)) replies.push(m); });
+    replies.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    replies.forEach(r => {
+      const d = document.createElement('div'); d.className = 'post'; d.style.marginTop = '8px';
+      d.innerHTML = `<div class="meta">${escapeHtml(r.author_name || 'unknown')} • ${timeAgo(r.timestamp)}</div><div style="margin-top:6px">${formatText(r.content)}</div>`;
+      if(r.attachments && r.attachments[0] && r.attachments[0].url){ const im = document.createElement('img'); im.src = r.attachments[0].url; im.style.maxWidth = '100%'; im.style.marginTop = '8px'; im.onclick = ()=> showLightbox(im.src); d.appendChild(im); }
+      content.appendChild(d);
+    });
+
+  }catch(err){
     console.error(err);
-    logDebug(err.stack || err);
-    alert('Error loading thread (see debug)');
+    logDebug(err.stack || err.toString());
+    alert('Error loading thread — see debug');
   }
 }
 
-/* formatting helper (quote spans) */
+/* format text (greentext, >>id spans, linkify) */
 function formatText(text){
   if(!text) return '';
   let t = escapeHtml(text);
-  t = t.replace(/^&gt;(.+)$/gm, (m,p1)=>`<div style="color:#7cffb2">&gt;${escapeHtml(p1)}</div>`);
-  t = t.replace(/&gt;&gt;(\d{1,20})/g, (m,id)=>`<span class="quote" data-id="${id}">&gt;&gt;${id}</span>`);
-  t = t.replace(/(https?:\/\/[^\s]+)/g, m=>`<a href="${m}" target="_blank">${m}</a>`);
+  t = t.replace(/^&gt;(.+)$/gm, (m,p1) => `<div style="color:#7cffb2">&gt;${escapeHtml(p1)}</div>`);
+  t = t.replace(/&gt;&gt;(\d{1,20})/g, (m,id) => `<span class="quote" data-id="${id}">&gt;&gt;${id}</span>`);
+  t = t.replace(/(https?:\/\/[^\s]+)/g, m => `<a href="${m}" target="_blank">${m}</a>`);
   return t.replace(/\n/g,'<br>');
 }
 
-/* share (site permalink) */
-async function sharePost(id){
+/* share: copies site permalink and attempts navigator.share */
+async function sharePost(messageId){
   const boardKey = selectedBoard || Object.keys(BOARDS)[0];
   const base = window.location.origin + window.location.pathname;
-  const url = `${base}?board=${encodeURIComponent(boardKey)}&thread=${encodeURIComponent(id)}`;
+  const url = `${base}?board=${encodeURIComponent(boardKey)}&thread=${encodeURIComponent(messageId)}`;
   try{
     await navigator.clipboard.writeText(url);
     showToast('Link copied');
-    if(navigator.share) { try { await navigator.share({ title:'Purple Board', url }); } catch(e){} }
-  }catch(e){ console.error(e); showToast('Copy failed'); }
+    if(navigator.share){
+      try { await navigator.share({ title: 'Purple Board post', url }); } catch(e) { /* ignore */ }
+    }
+  }catch(e){
+    console.error(e);
+    showToast('Copy failed');
+  }
 }
 
-/* insert quote */
+/* insert >>id into composer */
 function insertQuote(id){
   const ta = $('comment'); if(!ta) return;
   ta.focus();
-  ta.value = ta.value + (ta.value && !ta.value.endsWith('\n')?'\n':'') + `>>${id}\n`;
+  ta.value = ta.value + (ta.value && !ta.value.endsWith('\n') ? '\n' : '') + `>>${id}\n`;
 }
 
 /* lightbox */
-function showLightbox(src){ $('lightboxImg').src = src; $('lightbox').style.display='flex'; }
-function hideLightbox(){ $('lightbox').style.display='none'; $('lightboxImg').src=''; }
+function showLightbox(src){ $('lightboxImg').src = src; $('lightbox').style.display = 'flex'; }
+function hideLightbox(){ $('lightbox').style.display = 'none'; $('lightboxImg').src = ''; }
 
-/* health */
+/* health check */
 async function checkHealth(){
   try{
     const res = await fetch(WORKER_BASE.replace(/\/$/,'') + '/health');
     const txt = await res.text();
     logDebug({ url: res.url, status: res.status, body: txt });
-    alert('Health: ' + res.status + '\nSee Debug');
-  }catch(err){ logDebug(err.stack || err); alert('Health check failed — see debug'); }
+    alert('Health: ' + res.status + ' — see debug');
+  }catch(err){ logDebug(err.stack || err.toString()); alert('Health check failed — see debug'); }
 }
 
-/* attach global shortcuts and start */
-document.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); onPost(); }});
-loadThreads(false);
+/* start periodic refresh */
+setInterval(()=> loadThreads(true), 20000);
+
+/* expose helpers for console */
+window.loadThreads = loadThreads;
+window.openThread = openThread;
 </script>
 </body>
 </html>
