@@ -62,7 +62,7 @@ a{color:var(--accent)}
 
     <div class="card" style="margin-top:12px">
       <strong>Quick help</strong>
-      <div class="small" style="margin-top:8px">Pick a board, post text & image. Click posts to open threads. Use the Share button to copy a Discord permalink or share via your OS.</div>
+      <div class="small" style="margin-top:8px">Pick a board, post text & image. Click posts to open threads. Use Share to copy a site permalink.</div>
     </div>
   </aside>
 
@@ -162,13 +162,22 @@ function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&
 function timeAgo(ts){ const t = Date.parse(ts); if(isNaN(t)) return ''; const s = Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
 function initials(name){ if(!name) return 'U'; return name.trim().split(/\s+/).map(p=>p[0].toUpperCase()).slice(0,2).join(''); }
 
-/* init UI */
+/* ========== REPLACED init() (handles deep links) ========== */
 function init(){
   boardListEl.innerHTML = '';
   for(const k in BOARDS){
     const b = document.createElement('button'); b.textContent = '/'+k+'/'; b.dataset.board = k; b.onclick = ()=> selectBoard(k,b); boardListEl.appendChild(b);
   }
-  const first = Object.keys(BOARDS)[0]; if(first) selectBoard(first, boardListEl.querySelector('button'));
+
+  // check URL params for board/thread deep link
+  const params = new URLSearchParams(window.location.search);
+  const boardParam = params.get('board');
+  const threadParam = params.get('thread');
+
+  // If a board param is provided and valid, select it; else select first by default
+  const first = boardParam && BOARDS[boardParam] ? boardParam : Object.keys(BOARDS)[0];
+  if(first) selectBoard(first, boardListEl.querySelector(`button[data-board="${first}"]`));
+
   postBtn.addEventListener('click', onPost);
   refreshBtn.addEventListener('click', ()=> loadThreads(true));
   healthBtn.addEventListener('click', checkHealth);
@@ -176,18 +185,21 @@ function init(){
   $('replyBtn').addEventListener('click', onReply);
   debugHint.textContent = 'Worker: ' + (WORKER_BASE?WORKER_BASE.replace(/^https?:\/\//,''):'(not set)');
   document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); if(document.activeElement && (document.activeElement.tagName==='TEXTAREA' || document.activeElement.tagName==='INPUT')) postBtn.click(); }});
-  loadThreads(false);
+
+  // load threads, then open thread if present in URL
+  loadThreads(false).then(()=>{
+    if(threadParam){
+      // wait a tiny bit for merged posts to be available then open
+      setTimeout(()=> {
+        try {
+          openThread(threadParam);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch(e){ console.warn('Failed to auto-open thread from URL', e); }
+      }, 300);
+    }
+  }).catch(err => { console.warn('loadThreads error during init', err); });
 }
 init();
-
-// select board
-function selectBoard(name, btn){
-  boardListEl.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-  selectedBoard = name; selectedBoardWebhook = BOARDS[name].webhook;
-  selectedBoardNameEl.textContent = '/'+name+'/';
-  $('threadViewCard').style.display = 'none';
-}
 
 /* webhook helper */
 function webhookWithWait(url){ return url.includes('?') ? url + '&wait=true' : url + '?wait=true' }
@@ -280,6 +292,7 @@ async function loadThreads(force=false){
     const merged = Array.from(byId.values()).sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
     const threads = groupToThreads(merged);
     renderThreads(threads);
+    return threads;
   }catch(e){ console.error(e); threadsEl.innerHTML='Failed to load messages (console)'; debugEl.style.display='block'; debugEl.textContent=String(e); }
 }
 
@@ -381,12 +394,33 @@ function formatText(text){
   return t.replace(/\n/g,'<br>');
 }
 function findThreadById(id){ return threadsEl.querySelector(`.quote[data-id="${id}"]`); }
-function discordPermalink(messageId){ const channel = BOARDS[selectedBoard].channel; return `https://discord.com/channels/${GUILD_ID}/${channel}/${messageId}`; }
 
+/* ========== REPLACED sharePost: share site permalink rather than Discord link ========== */
 async function sharePost(messageId){
-  const url = discordPermalink(messageId);
-  try{ await navigator.clipboard.writeText(url); showCopyToast('Link copied'); if(navigator.share){ try{ await navigator.share({ title: 'Purple Board post', url }); }catch(e){} } }catch(e){ console.error('share failed', e); showCopyToast('Copy failed'); }
+  // use the board in the share link (if a board is selected)
+  const boardKey = selectedBoard || Object.keys(BOARDS)[0];
+  const base = window.location.origin + window.location.pathname;
+  const url = `${base}?board=${encodeURIComponent(boardKey)}&thread=${encodeURIComponent(messageId)}`;
+
+  try{
+    // copy to clipboard
+    await navigator.clipboard.writeText(url);
+    showCopyToast('Link copied');
+    // try system share if available (mobile)
+    if(navigator.share){
+      try {
+        await navigator.share({ title: 'Purple Board post', url });
+      } catch (e) {
+        // ignore user cancel or errors silently
+      }
+    }
+  }catch(e){
+    console.error('share failed', e);
+    showCopyToast('Copy failed');
+  }
 }
+
+/* other helpers */
 function insertQuote(id){ const ta = $('comment'); ta.focus(); const v = ta.value; const toIns = (v && !v.endsWith('\n')?'\n':'') + `>>${id}\n`; ta.value = v + toIns; flash(`Inserted >>${id}`); }
 function flash(msg){ const s = $('status'); s.textContent = msg; setTimeout(()=>{ if(s.textContent===msg) s.textContent = ''; }, 2200); }
 function showLightbox(src){ $('lightboxImg').src = src; $('lightbox').style.display = 'flex'; }
@@ -395,9 +429,8 @@ let toastTimer = null;
 function showCopyToast(text){ copyToast.textContent = text || 'Copied'; copyToast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(()=> copyToast.style.display = 'none', 2200); }
 function checkHealth(){ if(!WORKER_BASE){ alert('Set WORKER_BASE'); return; } fetch(WORKER_BASE.replace(/\/$/,'') + '/health').then(async r=>{ const txt = await r.text(); alert('Health: '+r.status + '\n' + txt); }).catch(e=>{ alert('Health check failed — see console'); console.error(e); }); }
 
-/* initial auto-refresh */
+/* initial auto-refresh and console helpers */
 setInterval(()=> loadThreads(true), 20000);
-/* expose for console */
 window.loadThreads = loadThreads;
 window.openThread = openThread;
 </script>
