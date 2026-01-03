@@ -7,13 +7,11 @@
 <link rel="icon" href="data:,">
 <style>
 :root{
-  --bg-1: #0f0710;        /* page background */
-  --bg-2: #15061a;        /* card background */
+  --bg-1: #0f0710;
   --panel: rgba(255,255,255,0.03);
   --accent: #b781ff;
   --accent-2: #6f3df1;
   --muted: #cbbcf2;
-  --muted-2: #9b86c8;
   --text: #efe6ff;
   --glass: rgba(255,255,255,0.025);
   --card-border: rgba(255,255,255,0.04);
@@ -34,9 +32,6 @@ header{
   background: linear-gradient(90deg, rgba(23,6,31,0.6), rgba(28,7,38,0.45));
   border-bottom: 1px solid var(--card-border);
 }
-.brand{display:flex;align-items:center;gap:12px}
-.logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:inline-flex;align-items:center;justify-content:center;color:white;font-weight:700;box-shadow:0 6px 18px rgba(111,61,241,0.12)}
-header h1{margin:0;font-size:18px;letter-spacing:0.4px}
 .header-sub{color:var(--muted);font-size:13px}
 .container{max-width:1180px;margin:24px auto;padding:18px;display:grid;grid-template-columns:320px 1fr;gap:20px}
 .card{
@@ -64,7 +59,7 @@ button.primary:active{transform:translateY(1px)}
 .reply{margin-left:18px}
 .footer-note{font-size:13px;color:var(--muted);margin-top:8px}
 .captcha{display:flex;align-items:center;gap:8px;margin-top:6px}
-.debug{font-family:monospace;font-size:12px;color:var(--muted-2);white-space:pre-wrap;margin-top:8px}
+.debug{font-family:monospace;font-size:12px;color:var(--muted);white-space:pre-wrap;margin-top:8px}
 .avatar{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#6f3df1,#b76cff);display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;margin-right:10px;font-size:16px}
 .post-actions{display:flex;gap:8px;align-items:center;margin-top:10px}
 .action-btn{background:transparent;border:1px solid var(--card-border);padding:8px 10px;border-radius:8px;color:var(--muted);cursor:pointer;font-weight:600}
@@ -88,7 +83,7 @@ a:hover{text-decoration:underline}
 </head>
 <body>
 <header>
-  <div style="display:flex;align-items:center;gap:12px"><h1>Purple Board</h1><div class="small">Shared imageboard — posts → Discord webhooks; reads → Cloudflare Worker</div></div>
+  <div style="display:flex;align-items:center;gap:12px"><h1>Purple Board</h1><div class="small header-sub">Shared imageboard — posts → Discord webhooks; reads → Cloudflare Worker</div></div>
   <div id="accountArea" class="small"></div>
 </header>
 
@@ -97,13 +92,46 @@ a:hover{text-decoration:underline}
     <div><strong>Boards</strong></div>
     <div class="board-list" id="boardList" style="margin-top:10px"></div>
 
+    <!-- STATIC ACCOUNT CARD (always visible) -->
     <div class="card" style="margin-top:12px">
       <strong>Account</strong>
       <div style="margin-top:8px">
-        <div id="authForms"></div>
+        <!-- Static fallback login/register UI (always visible) -->
+        <div id="authFormsStatic" style="display:block; gap:6px;">
+          <div id="registerBlock" style="margin-bottom:8px">
+            <div style="font-weight:700;margin-bottom:6px">Register</div>
+            <input id="regUser" placeholder="username" style="margin-top:6px">
+            <input id="regPass" placeholder="password" type="password" style="margin-top:6px">
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <button id="regBtn" class="small">Register</button>
+              <button id="toLoginBtn" class="small">Switch to Login</button>
+            </div>
+          </div>
+
+          <div id="loginBlock" style="display:none;margin-top:8px">
+            <div style="font-weight:700;margin-bottom:6px">Login</div>
+            <input id="loginUser" placeholder="username" style="margin-top:6px">
+            <input id="loginPass" placeholder="password" type="password" style="margin-top:6px">
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <button id="loginBtn" class="small">Login</button>
+              <button id="toRegBtn" class="small">Switch to Register</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- dynamic logged-in box (used when JS sets current user) -->
         <div id="loggedInBox" style="display:none;margin-top:8px">
-          <div class="account-row"><div class="avatar" id="accountAvatar">U</div><div class="account-box"><div id="accountName"></div><div class="small" id="accountEmail"></div></div></div>
-          <div style="display:flex;gap:8px;margin-top:8px"><button id="logoutBtn" class="small">Logout</button><button id="botLoginBtn" class="small">Login via Bot</button></div>
+          <div class="account-row" style="display:flex;align-items:center;">
+            <div class="avatar" id="accountAvatar">U</div>
+            <div style="margin-left:8px">
+              <div id="accountName" style="font-weight:700"></div>
+              <div class="small" id="accountEmail"></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="logoutBtn" class="small">Logout</button>
+            <button id="botLoginBtn" class="small">Login via Bot</button>
+          </div>
         </div>
       </div>
       <div class="small" style="margin-top:8px">Register or login to post with a persistent name. Passwords are hashed in your browser before storage. (Demo only — don't use real passwords.)</div>
@@ -121,8 +149,6 @@ a:hover{text-decoration:underline}
         <div><strong>New Post / Thread</strong></div>
         <div class="small" id="selectedBoardName"></div>
       </div>
-
-      <!-- Name input removed: posting now uses logged-in username or Anonymous -->
 
       <label class="small" style="margin-top:8px">Comment</label>
       <textarea id="comment" rows="4" placeholder="Say something (use >greentext or >>messageId to quote)"></textarea>
@@ -167,7 +193,6 @@ a:hover{text-decoration:underline}
       <div id="threadView" class="thread-view"></div>
 
       <div style="margin-top:8px" class="post">
-        <!-- replyName removed: replies use logged-in username or Anonymous -->
         <textarea id="replyText" rows="3" placeholder="Reply"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px">
           <input id="replyFile" type="file" accept="image/*">
@@ -187,7 +212,7 @@ a:hover{text-decoration:underline}
 <div id="copyToast" class="copy-toast" style="display:none">Link copied to clipboard</div>
 
 <script>
-/* =============== CONFIG (user provided) =============== */
+/* =============== CONFIG =============== */
 const WORKER_BASE = 'https://pbordworker.dassouraasish.workers.dev';
 const BOARDS = {
   "art": { webhook: "https://discord.com/api/webhooks/1456573325148164128/UlQfAb8WE1hWw_uBCs01QPuLjuBg4HAjKAyifGjs0-YDqjIB75Ee1RMvBX0EmoXwE8Xi", channel: "1456573205237203045" },
@@ -198,8 +223,8 @@ const COOLDOWN_SECONDS = 12;
 const DAILY_LIMIT = 200;
 const GUILD_ID = '1283171828214534165';
 const SHARE_WEBHOOK = 'https://discord.com/api/webhooks/1456575897443238073/Uva4p8ZmCpq4NSn3ayyuqHaFJWA_gH0SQZ83jNXNi3QSy03L2FVFO88YqW8UsH8PBDbO';
-const SYNC_USERS_TO_WEBHOOK = false; // set true if you really want to mirror registration events to webhook (insecure: public)
-/* ===================================================== */
+const SYNC_USERS_TO_WEBHOOK = false;
+/* ===================================== */
 
 const $ = id => document.getElementById(id);
 const boardListEl = $('boardList'), selectedBoardNameEl = $('selectedBoardName'), threadsEl = $('threads');
@@ -207,16 +232,15 @@ const postBtn = $('postBtn'), refreshBtn = $('refreshBtn'), healthBtn = $('healt
 const copyToast = $('copyToast');
 let selectedBoard = null, selectedBoardWebhook = null, viewingThreadId = null;
 
-// small helpers
+// helpers
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c])); }
 function timeAgo(ts){ const t = Date.parse(ts); if(isNaN(t)) return ''; const s = Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
 function initials(name){ if(!name) return 'U'; return name.trim().split(/\s+/).map(p=>p[0].toUpperCase()).slice(0,2).join(''); }
 
-/* ========== Accounts (client-side, server-backed register/login) ========== */
+/* Accounts */
 function randomHex(bytes=8){ const a=new Uint8Array(bytes); crypto.getRandomValues(a); return Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join(''); }
 async function hashPassword(salt, password){ const enc = new TextEncoder(); const data = enc.encode(salt + '|' + password); const buf = await crypto.subtle.digest('SHA-256', data); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
 
-// --- local storage helpers
 function loadUsers(){ return JSON.parse(localStorage.getItem('pb_users')||'[]'); }
 function saveUsers(u){ localStorage.setItem('pb_users', JSON.stringify(u)); }
 function getToken(){ return localStorage.getItem('pb_token'); }
@@ -230,7 +254,7 @@ function setCurrentUser(user, token){
 }
 function logout(){ localStorage.removeItem('pb_current'); setToken(null); updateAccountUI(); }
 
-/* ========== API helpers (include Bearer token automatically) ========== */
+/* API helpers */
 async function apiFetch(path, opts = {}) {
   const url = WORKER_BASE.replace(/\/$/,'') + path;
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
@@ -239,89 +263,62 @@ async function apiFetch(path, opts = {}) {
   const finalOpts = Object.assign({}, opts, { headers });
   return fetch(url, finalOpts);
 }
+async function apiPost(path, body){ return apiFetch(path, { method:'POST', body: JSON.stringify(body) }); }
+async function apiGet(path){ return apiFetch(path, { method:'GET' }); }
 
-async function apiPost(path, body){
-  const res = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
-  return res;
-}
-
-async function apiGet(path){
-  return apiFetch(path, { method: 'GET' });
-}
-
-/* ---- onRegister: compute salt/hash client-side, send to Worker /register, then attempt login to receive session token ---- */
+/* Register/Login handlers (client) */
 async function onRegister(){
   const u = $('regUser').value.trim(); const p = $('regPass').value;
   if(!u || !p){ alert('Provide username & password'); return; }
-  const users = loadUsers(); if(users.find(x=>x.username===u)){ /* allow server register anyway */ }
+  const users = loadUsers();
   const salt = randomHex(12); const h = await hashPassword(salt,p);
-  // send to worker which will post to the webhook
   try {
     const res = await apiPost('/register', { username: u, salt, hash: h });
-    if(!res.ok) {
-      const txt = await res.text().catch(()=> '');
-      alert('Register failed: ' + res.status + ' ' + txt);
-      return;
-    }
-    // optionally keep a local cache of user for UI convenience
-    users.push({ username: u, salt, hash: h, created: new Date().toISOString() });
-    saveUsers(users);
-
-    // try to login (obtain session token) automatically
+    if(!res.ok){ const txt = await res.text().catch(()=> ''); alert('Register failed: ' + res.status + ' ' + txt); return; }
+    users.push({ username: u, salt, hash: h, created: new Date().toISOString() }); saveUsers(users);
+    // attempt login to get token
     const loginRes = await apiPost('/login', { username: u, password: p });
     if(loginRes.ok){
       const body = await loginRes.json().catch(()=>null);
-      if(body && body.ok && body.token){
-        setCurrentUser({ username: u }, body.token);
-        alert('Registered and logged in as ' + u);
-        return;
-      }
+      if(body && body.ok && body.token){ setCurrentUser({ username: u }, body.token); alert('Registered and logged in as ' + u); return; }
     }
-    // If login didn't return token, still set local current (no token)
     setCurrentUser({ username: u }, null);
     alert('Registered (no token). You may need to login to obtain a session token.');
-  } catch(e){
-    console.error(e);
-    alert('Registration failed (console)');
-  }
+  } catch(e){ console.error(e); alert('Registration failed (console)'); }
 }
 
-/* ---- onLogin: send username+password to Worker /login which verifies against Discord-logged registration ---- */
 async function onLogin(){
   const u = $('loginUser').value.trim() || $('regUser').value.trim();
   const p = $('loginPass').value || $('regPass').value;
   if(!u || !p){ alert('Provide username & password'); return; }
   try {
     const res = await apiPost('/login', { username: u, password: p });
-    if(!res.ok){
-      const txt = await res.text().catch(()=> '');
-      alert('Login failed: ' + res.status + ' ' + txt);
-      return;
-    }
+    if(!res.ok){ const txt = await res.text().catch(()=> ''); alert('Login failed: ' + res.status + ' ' + txt); return; }
     const body = await res.json().catch(()=>null);
-    if(body && body.ok){
-      const token = body.token || null;
-      setCurrentUser({ username: u }, token);
-      alert('Logged in as ' + u);
-    } else {
-      alert('Login failed: ' + (body && body.reason ? body.reason : 'unknown'));
-    }
-  } catch(e){
-    console.error(e);
-    alert('Login failed (console)');
-  }
+    if(body && body.ok){ const token = body.token || null; setCurrentUser({ username: u }, token); alert('Logged in as ' + u); } else alert('Login failed: ' + (body && body.reason ? body.reason : 'unknown'));
+  } catch(e){ console.error(e); alert('Login failed (console)'); }
 }
 
-function updateAccountUI(){ const cur = getCurrentUser(); const area = $('accountArea');
+/* Update UI for account area */
+function updateAccountUI(){
+  const cur = getCurrentUser();
+  const regBlock = document.getElementById('registerBlock');
+  const loginBlock = document.getElementById('loginBlock');
   if(cur && cur.username){
-    $('loggedInBox').style.display='block'; $('authForms').style.display='none';
-    $('accountName').textContent = cur.username; $('accountAvatar').textContent = initials(cur.username); $('accountEmail').textContent = (getToken()? 'Session: stored' : '');
+    $('loggedInBox').style.display='block';
+    if(regBlock) regBlock.style.display='none';
+    if(loginBlock) loginBlock.style.display='none';
+    $('accountName').textContent = cur.username;
+    $('accountAvatar').textContent = initials(cur.username);
+    $('accountEmail').textContent = (getToken()? 'Session: stored' : '');
   } else {
-    $('loggedInBox').style.display='none'; $('authForms').style.display='block'; renderAuthForms();
+    $('loggedInBox').style.display='none';
+    if(regBlock) regBlock.style.display='';
+    if(loginBlock) loginBlock.style.display='none';
   }
 }
 
-/* try to call a bot login endpoint on the worker (optional). This requires a server-side implementation. */
+/* try to call a bot login endpoint on the worker (optional) */
 async function botLogin(){
   const cur = getCurrentUser(); if(!cur || !cur.username){ alert('Login first'); return; }
   if(!WORKER_BASE){ alert('No worker base set'); return; }
@@ -332,9 +329,7 @@ async function botLogin(){
   }catch(e){ alert('Bot login failed — worker may not implement /bot-login'); console.error(e); }
 }
 
-/* ========== end accounts ========== */
-
-/* init UI */
+/* UI init */
 function init(){
   boardListEl.innerHTML = '';
   for(const k in BOARDS){
@@ -350,7 +345,20 @@ function init(){
   $('botLoginBtn').addEventListener('click', ()=> botLogin());
   debugHint.textContent = 'Worker: ' + (WORKER_BASE?WORKER_BASE.replace(/^https?:\/\//,''):'(not set)');
   document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); if(document.activeElement && (document.activeElement.tagName==='TEXTAREA' || document.activeElement.tagName==='INPUT')) postBtn.click(); }});
-  // wire profile modal controls
+
+  // wire static account buttons
+  document.getElementById('regBtn').addEventListener('click', onRegister);
+  document.getElementById('loginBtn').addEventListener('click', onLogin);
+  document.getElementById('toLoginBtn').addEventListener('click', () => {
+    document.getElementById('registerBlock').style.display = 'none';
+    document.getElementById('loginBlock').style.display = '';
+  });
+  document.getElementById('toRegBtn').addEventListener('click', () => {
+    document.getElementById('loginBlock').style.display = 'none';
+    document.getElementById('registerBlock').style.display = '';
+  });
+
+  // profile modal controls
   const closeProfileBtn = document.getElementById('closeProfile');
   if(closeProfileBtn) closeProfileBtn.addEventListener('click', hideProfileModal);
   const fetchRemoteBtn = document.getElementById('fetchRemotePosts');
@@ -370,39 +378,19 @@ function init(){
 }
 init();
 
-// token verification: call worker /whoami if available
+/* verify token on load by calling /whoami if available */
 async function verifyTokenOnLoad(){
   const token = getToken();
   if(!token) return;
   try {
     const res = await apiGet('/whoami');
-    if(!res.ok) {
-      // endpoint missing or token invalid; leave local state as-is (do not auto-login)
-      console.warn('/whoami returned', res.status);
-      return;
-    }
+    if(!res.ok) { console.warn('/whoami returned', res.status); return; }
     const body = await res.json().catch(()=>null);
-    if(body && body.username){
-      setCurrentUser({ username: body.username }, token);
-    }
-  } catch(e){
-    console.warn('whoami verify failed', e);
-  }
+    if(body && body.username){ setCurrentUser({ username: body.username }, token); }
+  } catch(e){ console.warn('whoami verify failed', e); }
 }
 
-// select board
-function selectBoard(name, btn){
-  boardListEl.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-  selectedBoard = name; selectedBoardWebhook = BOARDS[name].webhook;
-  selectedBoardNameEl.textContent = '/'+name+'/';
-  $('threadViewCard').style.display = 'none';
-}
-
-/* webhook helper */
-function webhookWithWait(url){ return url.includes('?') ? url + '&wait=true' : url + '?wait=true' }
-
-/* Post */
+/* Posting/Replies (use logged-in username or Anonymous) */
 async function onPost(){
   $('status').textContent = '';
   if(!selectedBoard){ $('status').textContent='Select a board'; return; }
@@ -412,7 +400,6 @@ async function onPost(){
   if(!comment && !file){ $('status').textContent='Write something or attach an image'; return; }
   if(!$('fakeCaptcha').checked){ $('status').textContent='Complete captcha (demo)'; return; }
 
-  // cooldown & daily
   const lastKey = `last_${selectedBoard}`; const last = Number(localStorage.getItem(lastKey)||0); const nowTs = Date.now();
   if(nowTs - last < COOLDOWN_SECONDS*1000){ $('status').textContent = `Cooldown: wait ${Math.ceil((COOLDOWN_SECONDS*1000 - (nowTs-last))/1000)}s`; return; }
   const dailyKey = `daily_${selectedBoard}`; const daily = JSON.parse(localStorage.getItem(dailyKey)||'[]').filter(t=>nowTs-t<24*3600*1000);
@@ -435,7 +422,6 @@ async function onPost(){
   } catch(e){ console.error(e); $('status').textContent='Post failed (console)'; }
 }
 
-/* Reply */
 async function onReply(){
   const threadId = viewingThreadId; if(!threadId){ $('replyStatus').textContent='No thread selected'; return; }
   const cur = getCurrentUser();
@@ -457,7 +443,7 @@ async function onReply(){
   }catch(e){ console.error(e); $('replyStatus').textContent='Error posting reply'; }
 }
 
-/* Load via Worker */
+/* Threads loading/rendering (unchanged) */
 async function loadThreads(force=false){
   threadsEl.innerHTML = 'Loading…'; debugEl.style.display='none'; debugEl.textContent='';
   if(!WORKER_BASE || WORKER_BASE.includes('PASTE')) { threadsEl.innerHTML='Set WORKER_BASE in HTML'; return; }
@@ -497,7 +483,6 @@ async function loadThreads(force=false){
   }catch(e){ console.error(e); threadsEl.innerHTML='Failed to load messages (console)'; debugEl.style.display='block'; debugEl.textContent=String(e); }
 }
 
-/* Group into threads */
 function groupToThreads(msgs){
   const map = new Map(); msgs.forEach(m=>map.set(m.id,m));
   const threads = new Map(); msgs.forEach(m=>threads.set(m.id,{ op:m, replies:[] }));
@@ -516,7 +501,6 @@ function groupToThreads(msgs){
   return Array.from(threads.values()).sort((a,b)=> new Date(b.op.timestamp) - new Date(a.op.timestamp));
 }
 
-/* Render threads (posts clickable to open thread) */
 function renderThreads(threads){
   threadsEl.innerHTML = '';
   if(!threads.length){ threadsEl.innerHTML = '<div class="empty">No threads found.</div>'; return; }
@@ -550,7 +534,6 @@ function renderThreads(threads){
     card.appendChild(left); card.appendChild(right);
     threadsEl.appendChild(card);
 
-    // enable clicking >>id spans inside this card
     body.querySelectorAll('.quote').forEach(q=>{
       q.addEventListener('click', (ev)=>{
         ev.stopPropagation();
@@ -562,7 +545,6 @@ function renderThreads(threads){
   });
 }
 
-/* Thread view & rendering */
 function openThread(opId){ viewingThreadId = opId; $('threadViewCard').style.display='block'; renderThreadView(opId); window.scrollTo({top:0,behavior:'smooth'}); }
 function renderThreadView(opId){
   const wrap = $('threadView'); wrap.innerHTML='Loading…';
@@ -586,7 +568,6 @@ function renderThreadView(opId){
   }).catch(e=>{ console.error(e); wrap.innerHTML='<div class="small">Failed to load thread</div>'; });
 }
 
-/* formatting & helpers */
 function formatText(text){
   if(!text) return '';
   let t = escapeHtml(text);
@@ -598,16 +579,14 @@ function formatText(text){
 function findThreadById(id){ return threadsEl.querySelector(`.quote[data-id="${id}"]`); }
 function discordPermalink(messageId){ const channel = BOARDS[selectedBoard].channel; return `https://discord.com/channels/${GUILD_ID}/${channel}/${messageId}`; }
 
-async function sharePost(messageId){ // legacy: copy discord permalink & navigator.share
+async function sharePost(messageId){
   const url = discordPermalink(messageId);
   try{ await navigator.clipboard.writeText(url); showCopyToast('Link copied'); if(navigator.share){ try{ await navigator.share({ title: 'Purple Board post', url }); }catch(e){} } }catch(e){ console.error('share failed', e); showCopyToast('Copy failed'); }
 }
 
 async function shareViaSite(messageId, post){
-  // create a site-friendly permalink (fragment) so the site can open it later
   const siteUrl = window.location.origin + window.location.pathname + `#post-${selectedBoard}-${messageId}`;
   try{ await navigator.clipboard.writeText(siteUrl); showCopyToast('Site link copied'); }catch(e){ console.warn('copy failed', e); }
-  // optionally notify SHARE_WEBHOOK so the site (or Discord) can announce the share (this will publicly post to that webhook)
   if(SHARE_WEBHOOK){
     try{
       const author = (post && (post.author_name||post.name)) || 'unknown';
@@ -615,7 +594,6 @@ async function shareViaSite(messageId, post){
       await fetch(webhookWithWait(SHARE_WEBHOOK), { method:'POST', body: fd });
     }catch(e){ console.warn('share webhook failed',e); }
   }
-  // if navigator.share is available, open system share too
   if(navigator.share){ try{ await navigator.share({ title: 'Purple Board — post', url: siteUrl }); }catch(e){} }
 }
 
@@ -627,20 +605,17 @@ let toastTimer = null;
 function showCopyToast(text){ copyToast.textContent = text || 'Copied'; copyToast.style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(()=> copyToast.style.display = 'none', 2200); }
 function checkHealth(){ if(!WORKER_BASE){ alert('Set WORKER_BASE'); return; } fetch(WORKER_BASE.replace(/\/$/,'') + '/health').then(async r=>{ const txt = await r.text(); alert('Health: '+r.status + '\n' + txt); }).catch(e=>{ alert('Health check failed — see console'); console.error(e); }); }
 
-/* initial auto-refresh */
 setInterval(()=> loadThreads(true), 20000);
-/* expose for console */
 window.loadThreads = loadThreads;
 window.openThread = openThread;
 
-// profile functions - client-side viewer using #profile-username
+// profile modal
 function openProfile(username){ location.hash = '#profile-' + encodeURIComponent(username); }
 window.addEventListener('hashchange', renderProfileFromHash);
 function renderProfileFromHash(){ const h = location.hash || ''; if(!h.startsWith('#profile-')){ hideProfileModal(); return; } const username = decodeURIComponent(h.slice(9)); showProfileModal(username); }
 function showProfileModal(username){ const modal = document.getElementById('profileModal'); if(!modal) return; modal.style.display = 'block'; modal.setAttribute('aria-hidden','false'); document.getElementById('profileName').textContent = username; document.getElementById('profileAvatar').textContent = initials(username); const users = loadUsers(); const found = users.find(u=>u.username===username); document.getElementById('profileCreated').textContent = found ? 'Joined: ' + new Date(found.created).toLocaleString() : 'Local profile: not registered'; const postsEl = document.getElementById('profilePosts'); postsEl.innerHTML = '<div class="small">Loading local posts…</div>'; const localMatches = []; Object.keys(localStorage).forEach(k => { if(!k.startsWith('posts_')) return; const arr = JSON.parse(localStorage.getItem(k) || '[]'); arr.forEach(p => { try { const author = p.name || (p.content && p.content.split(String.fromCharCode(10))[0]) || ''; if(author && author.trim()===username) localMatches.push({ board: k.slice(6), id: p.id, ts: p.ts||p.timestamp, text: p.content }); } catch(e){} }); }); if(localMatches.length){ postsEl.innerHTML = '<strong>Local posts</strong>' + localMatches.map(p=>'<div class="small">/' + escapeHtml(p.board) + '/ • ' + new Date(p.ts).toLocaleString() + ' • <a href="#post-' + escapeHtml(p.board) + '-' + escapeHtml(p.id) + '">view</a></div>').join(''); } else { postsEl.innerHTML = '<div class="small">No local posts found. Click "Fetch remote posts" to search the worker.</div>'; } }
 function hideProfileModal(){ const modal = document.getElementById('profileModal'); if(!modal) return; modal.style.display = 'none'; modal.setAttribute('aria-hidden','true'); }
 
-// Fetch remote posts for a username across boards (best-effort)
 async function fetchRemotePosts(username){
   const postsEl = document.getElementById('profilePosts');
   postsEl.innerHTML = '<div class="small">Searching remote posts…</div>';
@@ -654,7 +629,6 @@ async function fetchRemotePosts(username){
         const data = await res.json();
         data.forEach(m => {
           try {
-            // Match by Discord author username OR by first-line name prefix
             const authorUsername = (m.author && m.author.username) || '';
             const firstLine = (m.content||'').split('\n')[0] || '';
             if(authorUsername === username || firstLine.trim() === username){
@@ -664,22 +638,18 @@ async function fetchRemotePosts(username){
         });
       } catch(e){}
     }
-  } catch(e){
-    console.error('fetchRemotePosts error', e);
-  }
+  } catch(e){ console.error('fetchRemotePosts error', e); }
 
   if(results.length === 0){
     postsEl.innerHTML = '<div class="small">No remote posts found for this user (or the worker does not allow /messages requests).</div>';
     return;
   }
-  // sort by ts desc
   results.sort((a,b) => new Date(b.ts) - new Date(a.ts));
   postsEl.innerHTML = '<strong>Remote posts</strong>' + results.map(p=>`<div class="small">/${escapeHtml(p.board)}/ • ${new Date(p.ts).toLocaleString()} • <a href="${p.url}" target="_blank">view</a></div>`).join('');
 }
-
 </script>
 
-<!-- Profile modal (client-side viewer) -->
+<!-- Profile modal -->
 <div id="profileModal" class="profile-modal" style="display:none" aria-hidden="true">
   <div style="display:flex;justify-content:space-between;align-items:center">
     <div style="display:flex;align-items:center;gap:10px">
