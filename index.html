@@ -122,8 +122,7 @@ a:hover{text-decoration:underline}
         <div class="small" id="selectedBoardName"></div>
       </div>
 
-      <label class="small" style="margin-top:8px">Name</label>
-      <input type="text" id="name" placeholder="Name (optional)">
+      <!-- Name input removed: posting now uses logged-in username or Anonymous -->
 
       <label class="small" style="margin-top:8px">Comment</label>
       <textarea id="comment" rows="4" placeholder="Say something (use >greentext or >>messageId to quote)"></textarea>
@@ -168,7 +167,7 @@ a:hover{text-decoration:underline}
       <div id="threadView" class="thread-view"></div>
 
       <div style="margin-top:8px" class="post">
-        <input id="replyName" placeholder="Name (optional)">
+        <!-- replyName removed: replies use logged-in username or Anonymous -->
         <textarea id="replyText" rows="3" placeholder="Reply"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px">
           <input id="replyFile" type="file" accept="image/*">
@@ -408,8 +407,7 @@ async function onPost(){
   $('status').textContent = '';
   if(!selectedBoard){ $('status').textContent='Select a board'; return; }
   const cur = getCurrentUser();
-  const nameField = $('name').value.trim();
-  const author = cur && cur.username ? cur.username : (nameField || 'Anonymous');
+  const author = cur && cur.username ? cur.username : 'Anonymous';
   const comment = $('comment').value.trim(); const file = $('file').files[0]; const isThread = $('asThread').checked;
   if(!comment && !file){ $('status').textContent='Write something or attach an image'; return; }
   if(!$('fakeCaptcha').checked){ $('status').textContent='Complete captcha (demo)'; return; }
@@ -441,8 +439,7 @@ async function onPost(){
 async function onReply(){
   const threadId = viewingThreadId; if(!threadId){ $('replyStatus').textContent='No thread selected'; return; }
   const cur = getCurrentUser();
-  const nameField = $('replyName').value.trim();
-  const author = cur && cur.username ? cur.username : (nameField || 'Anonymous');
+  const author = cur && cur.username ? cur.username : 'Anonymous';
   const text = $('replyText').value.trim(); const file = $('replyFile').files[0];
   if(!text && !file){ $('replyStatus').textContent='Write something or attach image'; return; }
   const content = (author?author+'\n':'') + `>>${threadId}\n` + text;
