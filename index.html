@@ -198,7 +198,6 @@ const BOARDS = {
 const COOLDOWN_SECONDS = 12;
 const DAILY_LIMIT = 200;
 const GUILD_ID = '1283171828214534165';
-// Optional webhook to store share events or user registrations (user provided)
 const SHARE_WEBHOOK = 'https://discord.com/api/webhooks/1456575897443238073/Uva4p8ZmCpq4NSn3ayyuqHaFJWA_gH0SQZ83jNXNi3QSy03L2FVFO88YqW8UsH8PBDbO';
 const SYNC_USERS_TO_WEBHOOK = false; // set true if you really want to mirror registration events to webhook (insecure: public)
 /* ===================================================== */
@@ -214,57 +213,124 @@ function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g,c=>({'&':'&
 function timeAgo(ts){ const t = Date.parse(ts); if(isNaN(t)) return ''; const s = Math.floor((Date.now()-t)/1000); if(s<60) return `${s}s`; if(s<3600) return `${Math.floor(s/60)}m`; if(s<86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; }
 function initials(name){ if(!name) return 'U'; return name.trim().split(/\s+/).map(p=>p[0].toUpperCase()).slice(0,2).join(''); }
 
-/* ========== Accounts (client-side, demo) ========== */
+/* ========== Accounts (client-side, server-backed register/login) ========== */
 function randomHex(bytes=8){ const a=new Uint8Array(bytes); crypto.getRandomValues(a); return Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join(''); }
 async function hashPassword(salt, password){ const enc = new TextEncoder(); const data = enc.encode(salt + '|' + password); const buf = await crypto.subtle.digest('SHA-256', data); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+
+// --- local storage helpers
 function loadUsers(){ return JSON.parse(localStorage.getItem('pb_users')||'[]'); }
 function saveUsers(u){ localStorage.setItem('pb_users', JSON.stringify(u)); }
+function getToken(){ return localStorage.getItem('pb_token'); }
+function setToken(token){ if(token) localStorage.setItem('pb_token', token); else localStorage.removeItem('pb_token'); }
 function getCurrentUser(){ return JSON.parse(localStorage.getItem('pb_current')||'null'); }
-function setCurrentUser(user){ localStorage.setItem('pb_current', JSON.stringify(user)); updateAccountUI(); }
-function logout(){ localStorage.removeItem('pb_current'); updateAccountUI(); }
+function setCurrentUser(user, token){
+  if(user) localStorage.setItem('pb_current', JSON.stringify(user));
+  else localStorage.removeItem('pb_current');
+  setToken(token||null);
+  updateAccountUI();
+}
+function logout(){ localStorage.removeItem('pb_current'); setToken(null); updateAccountUI(); }
 
-function renderAuthForms(){ const out = document.createElement('div');
-  out.innerHTML = `
-    <div id="authWrap">
-      <input id="regUser" placeholder="username" style="margin-top:6px">
-      <input id="regPass" placeholder="password" type="password" style="margin-top:6px">
-      <div style="display:flex;gap:8px;margin-top:6px"><button id="regBtn" class="small">Register</button><button id="toLogin" class="small">Go to Login</button></div>
-      <div style="height:8px"></div>
-      <input id="loginUser" placeholder="username" style="margin-top:6px;display:none">
-      <input id="loginPass" placeholder="password" type="password" style="margin-top:6px;display:none">
-      <div style="display:flex;gap:8px;margin-top:6px"><button id="loginBtn" class="small" style="display:none">Login</button><button id="toReg" class="small" style="display:none">Go to Register</button></div>
-    </div>
-  `;
-  $('authForms').innerHTML=''; $('authForms').appendChild(out);
-  // wire
-  $('regBtn').addEventListener('click', onRegister);
-  $('toLogin').addEventListener('click', ()=>{ $('regUser').style.display='none'; $('regPass').style.display='none'; $('regBtn').style.display='none'; $('toLogin').style.display='none'; $('loginUser').style.display=''; $('loginPass').style.display=''; $('loginBtn').style.display=''; $('toReg').style.display=''; });
-  $('toReg').addEventListener('click', ()=>{ location.reload(); });
-  $('loginBtn').addEventListener('click', onLogin);
+/* ========== API helpers (include Bearer token automatically) ========== */
+async function apiFetch(path, opts = {}) {
+  const url = WORKER_BASE.replace(/\/$/,'') + path;
+  const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+  const token = getToken();
+  if(token) headers['Authorization'] = 'Bearer ' + token;
+  const finalOpts = Object.assign({}, opts, { headers });
+  return fetch(url, finalOpts);
 }
 
-async function onRegister(){ const u = $('regUser').value.trim(); const p = $('regPass').value; if(!u || !p){ alert('Provide username & password'); return; }
-  const users = loadUsers(); if(users.find(x=>x.username===u)){ alert('Username already exists'); return; }
+async function apiPost(path, body){
+  const res = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
+  return res;
+}
+
+async function apiGet(path){
+  return apiFetch(path, { method: 'GET' });
+}
+
+/* ---- onRegister: compute salt/hash client-side, send to Worker /register, then attempt login to receive session token ---- */
+async function onRegister(){
+  const u = $('regUser').value.trim(); const p = $('regPass').value;
+  if(!u || !p){ alert('Provide username & password'); return; }
+  const users = loadUsers(); if(users.find(x=>x.username===u)){ /* allow server register anyway */ }
   const salt = randomHex(12); const h = await hashPassword(salt,p);
-  users.push({ username: u, salt, hash: h, created: new Date().toISOString() }); saveUsers(users);
-  setCurrentUser({ username: u });
-  if(SYNC_USERS_TO_WEBHOOK && SHARE_WEBHOOK){ try{ const fd = new FormData(); fd.append('content', `REGISTER: ${u} — ${new Date().toISOString()}`); await fetch(webhookWithWait(SHARE_WEBHOOK), { method:'POST', body: fd }); }catch(e){ console.warn('user sync failed',e); } }
-  alert('Registered and logged in as ' + u);
+  // send to worker which will post to the webhook
+  try {
+    const res = await apiPost('/register', { username: u, salt, hash: h });
+    if(!res.ok) {
+      const txt = await res.text().catch(()=> '');
+      alert('Register failed: ' + res.status + ' ' + txt);
+      return;
+    }
+    // optionally keep a local cache of user for UI convenience
+    users.push({ username: u, salt, hash: h, created: new Date().toISOString() });
+    saveUsers(users);
+
+    // try to login (obtain session token) automatically
+    const loginRes = await apiPost('/login', { username: u, password: p });
+    if(loginRes.ok){
+      const body = await loginRes.json().catch(()=>null);
+      if(body && body.ok && body.token){
+        setCurrentUser({ username: u }, body.token);
+        alert('Registered and logged in as ' + u);
+        return;
+      }
+    }
+    // If login didn't return token, still set local current (no token)
+    setCurrentUser({ username: u }, null);
+    alert('Registered (no token). You may need to login to obtain a session token.');
+  } catch(e){
+    console.error(e);
+    alert('Registration failed (console)');
+  }
 }
 
-async function onLogin(){ const u = $('loginUser').value.trim() || $('regUser').value.trim(); const p = $('loginPass').value || $('regPass').value; if(!u || !p){ alert('Provide username & password'); return; }
-  const users = loadUsers(); const found = users.find(x=>x.username===u); if(!found){ alert('No such user'); return; }
-  const h = await hashPassword(found.salt, p);
-  if(h === found.hash){ setCurrentUser({ username: u }); alert('Logged in as ' + u); }
-  else alert('Invalid password');
+/* ---- onLogin: send username+password to Worker /login which verifies against Discord-logged registration ---- */
+async function onLogin(){
+  const u = $('loginUser').value.trim() || $('regUser').value.trim();
+  const p = $('loginPass').value || $('regPass').value;
+  if(!u || !p){ alert('Provide username & password'); return; }
+  try {
+    const res = await apiPost('/login', { username: u, password: p });
+    if(!res.ok){
+      const txt = await res.text().catch(()=> '');
+      alert('Login failed: ' + res.status + ' ' + txt);
+      return;
+    }
+    const body = await res.json().catch(()=>null);
+    if(body && body.ok){
+      const token = body.token || null;
+      setCurrentUser({ username: u }, token);
+      alert('Logged in as ' + u);
+    } else {
+      alert('Login failed: ' + (body && body.reason ? body.reason : 'unknown'));
+    }
+  } catch(e){
+    console.error(e);
+    alert('Login failed (console)');
+  }
 }
 
-function updateAccountUI(){ const cur = getCurrentUser(); const area = $('accountArea'); if(cur && cur.username){ $('loggedInBox').style.display='block'; $('authForms').style.display='none'; $('accountName').textContent = cur.username; $('accountAvatar').textContent = initials(cur.username); $('accountEmail').textContent = ''; } else { $('loggedInBox').style.display='none'; $('authForms').style.display='block'; renderAuthForms(); } }
+function updateAccountUI(){ const cur = getCurrentUser(); const area = $('accountArea');
+  if(cur && cur.username){
+    $('loggedInBox').style.display='block'; $('authForms').style.display='none';
+    $('accountName').textContent = cur.username; $('accountAvatar').textContent = initials(cur.username); $('accountEmail').textContent = (getToken()? 'Session: stored' : '');
+  } else {
+    $('loggedInBox').style.display='none'; $('authForms').style.display='block'; renderAuthForms();
+  }
+}
 
 /* try to call a bot login endpoint on the worker (optional). This requires a server-side implementation. */
-async function botLogin(){ const cur = getCurrentUser(); if(!cur || !cur.username){ alert('Login first'); return; }
+async function botLogin(){
+  const cur = getCurrentUser(); if(!cur || !cur.username){ alert('Login first'); return; }
   if(!WORKER_BASE){ alert('No worker base set'); return; }
-  try{ const res = await fetch(WORKER_BASE.replace(/\/$/,'') + '/bot-login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: cur.username }) }); const txt = await res.text(); alert('Bot login response: ' + res.status + '\n' + txt); }catch(e){ alert('Bot login failed — worker may not implement /bot-login'); console.error(e); }
+  try{
+    const res = await fetch(WORKER_BASE.replace(/\/$/,'') + '/bot-login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username: cur.username }) });
+    const txt = await res.text();
+    alert('Bot login response: ' + res.status + '\n' + txt);
+  }catch(e){ alert('Bot login failed — worker may not implement /bot-login'); console.error(e); }
 }
 
 /* ========== end accounts ========== */
@@ -285,10 +351,45 @@ function init(){
   $('botLoginBtn').addEventListener('click', ()=> botLogin());
   debugHint.textContent = 'Worker: ' + (WORKER_BASE?WORKER_BASE.replace(/^https?:\/\//,''):'(not set)');
   document.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); if(document.activeElement && (document.activeElement.tagName==='TEXTAREA' || document.activeElement.tagName==='INPUT')) postBtn.click(); }});
-  updateAccountUI();
-  loadThreads(false);
+  // wire profile modal controls
+  const closeProfileBtn = document.getElementById('closeProfile');
+  if(closeProfileBtn) closeProfileBtn.addEventListener('click', hideProfileModal);
+  const fetchRemoteBtn = document.getElementById('fetchRemotePosts');
+  if(fetchRemoteBtn) fetchRemoteBtn.addEventListener('click', async () => {
+    const name = document.getElementById('profileName').textContent;
+    await fetchRemotePosts(name);
+  });
+
+  // verify token if present
+  verifyTokenOnLoad().then(()=> {
+    updateAccountUI();
+    loadThreads(false);
+  }).catch(()=> {
+    updateAccountUI();
+    loadThreads(false);
+  });
 }
 init();
+
+// token verification: call worker /whoami if available
+async function verifyTokenOnLoad(){
+  const token = getToken();
+  if(!token) return;
+  try {
+    const res = await apiGet('/whoami');
+    if(!res.ok) {
+      // endpoint missing or token invalid; leave local state as-is (do not auto-login)
+      console.warn('/whoami returned', res.status);
+      return;
+    }
+    const body = await res.json().catch(()=>null);
+    if(body && body.username){
+      setCurrentUser({ username: body.username }, token);
+    }
+  } catch(e){
+    console.warn('whoami verify failed', e);
+  }
+}
 
 // select board
 function selectBoard(name, btn){
@@ -326,7 +427,7 @@ async function onPost(){
   try {
     const r = await fetch(webhookWithWait(selectedBoardWebhook), { method: 'POST', body: fd });
     if(!r.ok) throw new Error('post failed: '+r.status);
-    const json = await r.json().catch(()=>({ id:String(Date.now()), content }));
+    const json = await r.json().catch(()=>({ id:String(Date.now()), content })); 
     const localKey = `posts_${selectedBoard}`; const posts = JSON.parse(localStorage.getItem(localKey)||'[]');
     const post = { id: json.id||String(Date.now()), content: json.content||content, ts: json.timestamp||new Date().toISOString(), attachments: json.attachments||[], parent: null, isOP: isThread, name: author };
     posts.unshift(post); localStorage.setItem(localKey, JSON.stringify(posts));
@@ -541,6 +642,43 @@ window.addEventListener('hashchange', renderProfileFromHash);
 function renderProfileFromHash(){ const h = location.hash || ''; if(!h.startsWith('#profile-')){ hideProfileModal(); return; } const username = decodeURIComponent(h.slice(9)); showProfileModal(username); }
 function showProfileModal(username){ const modal = document.getElementById('profileModal'); if(!modal) return; modal.style.display = 'block'; modal.setAttribute('aria-hidden','false'); document.getElementById('profileName').textContent = username; document.getElementById('profileAvatar').textContent = initials(username); const users = loadUsers(); const found = users.find(u=>u.username===username); document.getElementById('profileCreated').textContent = found ? 'Joined: ' + new Date(found.created).toLocaleString() : 'Local profile: not registered'; const postsEl = document.getElementById('profilePosts'); postsEl.innerHTML = '<div class="small">Loading local posts…</div>'; const localMatches = []; Object.keys(localStorage).forEach(k => { if(!k.startsWith('posts_')) return; const arr = JSON.parse(localStorage.getItem(k) || '[]'); arr.forEach(p => { try { const author = p.name || (p.content && p.content.split(String.fromCharCode(10))[0]) || ''; if(author && author.trim()===username) localMatches.push({ board: k.slice(6), id: p.id, ts: p.ts||p.timestamp, text: p.content }); } catch(e){} }); }); if(localMatches.length){ postsEl.innerHTML = '<strong>Local posts</strong>' + localMatches.map(p=>'<div class="small">/' + escapeHtml(p.board) + '/ • ' + new Date(p.ts).toLocaleString() + ' • <a href="#post-' + escapeHtml(p.board) + '-' + escapeHtml(p.id) + '">view</a></div>').join(''); } else { postsEl.innerHTML = '<div class="small">No local posts found. Click "Fetch remote posts" to search the worker.</div>'; } }
 function hideProfileModal(){ const modal = document.getElementById('profileModal'); if(!modal) return; modal.style.display = 'none'; modal.setAttribute('aria-hidden','true'); }
+
+// Fetch remote posts for a username across boards (best-effort)
+async function fetchRemotePosts(username){
+  const postsEl = document.getElementById('profilePosts');
+  postsEl.innerHTML = '<div class="small">Searching remote posts…</div>';
+  const results = [];
+  try {
+    for(const board in BOARDS){
+      const ch = BOARDS[board].channel;
+      try {
+        const res = await fetch(`${WORKER_BASE.replace(/\/$/,'')}/messages?channel_id=${ch}&limit=200`);
+        if(!res.ok) continue;
+        const data = await res.json();
+        data.forEach(m => {
+          try {
+            // Match by Discord author username OR by first-line name prefix
+            const authorUsername = (m.author && m.author.username) || '';
+            const firstLine = (m.content||'').split('\n')[0] || '';
+            if(authorUsername === username || firstLine.trim() === username){
+              results.push({ board, id: m.id, ts: m.timestamp, text: m.content, url: `https://discord.com/channels/${GUILD_ID}/${ch}/${m.id}` });
+            }
+          } catch(e){}
+        });
+      } catch(e){}
+    }
+  } catch(e){
+    console.error('fetchRemotePosts error', e);
+  }
+
+  if(results.length === 0){
+    postsEl.innerHTML = '<div class="small">No remote posts found for this user (or the worker does not allow /messages requests).</div>';
+    return;
+  }
+  // sort by ts desc
+  results.sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  postsEl.innerHTML = '<strong>Remote posts</strong>' + results.map(p=>`<div class="small">/${escapeHtml(p.board)}/ • ${new Date(p.ts).toLocaleString()} • <a href="${p.url}" target="_blank">view</a></div>`).join('');
+}
 
 </script>
 
